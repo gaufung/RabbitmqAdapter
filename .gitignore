@@ -1,0 +1,9 @@
+ENV/
+env/
+virtualenv/
+
+.vscode/
+.idea/
+
+*.log
+
