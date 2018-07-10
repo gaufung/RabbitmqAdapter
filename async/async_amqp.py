@@ -19,7 +19,7 @@ class AMQObject(object):
     """
     @classmethod
     def _get_log(cls, *name):
-        return logging.getLogger('.'.join((cls.__name__, cls.__name__) + name))
+        return logging.getLogger('.'.join((cls.__module__, cls.__name__) + name))
 
 
 class AsyncAMQPProducer(AMQObject):
@@ -53,6 +53,8 @@ class AsyncAMQPProducer(AMQObject):
         publish message
         :return: None
         """
+        log = self._get_log("publish")
+        log.info("initialize connection")
         self._connection = pika.TornadoConnection(pika.URLParameters(self._url),
                                                   on_open_callback=self._on_open_connection,
                                                   custom_ioloop=self._io_loop)
@@ -64,9 +66,13 @@ class AsyncAMQPProducer(AMQObject):
 
     @coroutine
     def _on_open_channel(self, channel):
-        yield tornado.gen.Task(channel.exchange_declare, exchange=self._exchange_name, exchange_type=self._exchange_type)
+        log = self._get_log("_on_open_channel")
+        log.info("open channel")
+        yield tornado.gen.Task(channel.exchange_declare, exchange=self._exchange_name,
+                               exchange_type=self._exchange_type)
         channel.basic_publish(exchange=self._exchange_name, routing_key=self._routing_key, body=self._message)
         channel.close()
+        log.info("close channel")
 
 
 class AsyncAMQPConsumer(AMQObject):
@@ -103,20 +109,30 @@ class AsyncAMQPConsumer(AMQObject):
         consume message
         :return:
         """
+        log = self._get_log("consume")
+        log.info("initialize connection")
         self._connection = pika.TornadoConnection(pika.URLParameters(self._url),
                                                   on_open_callback=self._on_open_connection,
                                                   custom_ioloop=self._io_loop)
 
     def _on_open_connection(self, conn):
+        log = self._get_log("_on_open_connection")
+        log.info("open connection")
         conn.channel(on_open_callback=self._on_open_channel)
 
     def _process(self, ch, method, properties, body):
+        log = self._get_log("_process")
+        log.info("consume body %s" % (body,))
         result = self._handler(body)
         if result:
+            log.info("message process success")
             ch.basic_ack(delivery_tag=method.delivery_tag)
+        log.error("message process failed")
 
     @coroutine
     def _on_open_channel(self, channel):
+        log = self._get_log("_on_open_channel")
+        log.info("open channel")
         yield tornado.gen.Task(channel.exchange_declare, exchange=self._exchange_name,
                                exchange_type=self._exchange_type)
         yield tornado.gen.Task(channel.queue_declare, queue=self._queue_name)
