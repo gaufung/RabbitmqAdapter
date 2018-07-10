@@ -19,7 +19,7 @@ class AMQObject(object):
     """
     @classmethod
     def _get_log(cls, *name):
-        return logging.getLogger('.'.join((cls.__name__, cls.__name__) + name))
+        return logging.getLogger('.'.join((cls.__module__, cls.__name__) + name))
 
 
 class AsyncAMQPProducer(AMQObject):
