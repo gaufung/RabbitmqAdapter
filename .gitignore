@@ -4,6 +4,7 @@ virtualenv/
 
 .vscode/
 .idea/
-
+*.pyc
 *.log
 
+.DS_Store
