@@ -3,7 +3,7 @@
 """
 import unittest
 import sys
-from ps_util import ProcessCpuTimesX, ProcessMemoryX, SystemResource, Resource
+from util.ps import ProcessCpuTimesX, ProcessMemoryX, SystemResource, Resource
 
 
 class TestProcessCpuTimesX(unittest.TestCase):

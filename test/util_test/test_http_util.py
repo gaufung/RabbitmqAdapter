@@ -4,7 +4,7 @@ Unit test of common.utils
 from __future__ import unicode_literals
 from __future__ import print_function
 import unittest
-from http_util import generate_url, _get_content_type
+from util.http import generate_url, _get_content_type
 
 
 class TestGenerateUrl(unittest.TestCase):
