@@ -8,3 +8,6 @@ virtualenv/
 *.log
 
 .DS_Store
+
+# coverage
+tmp/
