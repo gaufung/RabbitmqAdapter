@@ -12,9 +12,10 @@ import logging
 queue = Queue(maxsize=1)
 
 
+@gen.coroutine
 def _process(body):
     queue.put("Haha"+body)
-    return True
+    raise gen.Return(True)
 
 
 url = '127.0.0.1'

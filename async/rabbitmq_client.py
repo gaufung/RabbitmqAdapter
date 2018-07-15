@@ -5,6 +5,7 @@ import warnings
 import pika
 from pika.exceptions import ChannelClosed
 from tornado.ioloop import IOLoop
+from tornado.gen import coroutine
 
 __author__ = ["feng.gao@aispeech.com"]
 
@@ -175,10 +176,24 @@ class AsyncAMQPConsumer(AMQPObject):
     def _handler_delivery(self, channel, method, header, body):
         log = self._get_log("_handler_delivery")
         log.info("consume body %s" % (body,))
-        result = self._handler(body)
+        self._io_loop.spawn_callback(self._process_message,body=body, channel=channel,
+                                     delivery_tag=method.delivery_tag)
+        # result = self._handler(body)
+        # if result:
+        #     log.info("message process success")
+        #     channel.basic_ack(delivery_tag=method.delivery_tag)
+        # else:
+        #     log.error("message process failed")
+        #     pass
+
+    @coroutine
+    def _process_message(self, body, channel, delivery_tag):
+        log = self._get_log("_process_message")
+        log.info("start processing")
+        result = yield self._handler(body)
         if result:
             log.info("message process success")
-            channel.basic_ack(delivery_tag=method.delivery_tag)
+            channel.basic_ack(delivery_tag=delivery_tag)
         else:
             log.error("message process failed")
             pass
