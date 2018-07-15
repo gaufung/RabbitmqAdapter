@@ -266,11 +266,12 @@ class AsyncAMQPClient(RpcObject):
 if __name__ == "__main__":
     def fib(n):
         time.sleep(3)
+        print("response", n)
         return "response"+n
     logging.basicConfig(level=logging.INFO)
     _url = 'amqp://dev:aispeech2018@10.12.7.22:5672/'
     _io_loop = tornado.ioloop.IOLoop.current()
-    _rpc_queue = "queue_rpc2"
+    _rpc_queue = "queue_rpc1231"
     server = AsyncAMQPServer(_url, fib, routing_keys=["error"], queue_name=_rpc_queue, io_loop=_io_loop)
     server.service()
     _client = AsyncAMQPClient(_url, routing_key="error", queue_name=_rpc_queue, io_loop=_io_loop)

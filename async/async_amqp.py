@@ -4,6 +4,7 @@ import logging
 import tornado.ioloop
 from tornado.gen import coroutine
 import pika
+import uuid
 """
 The simple AMQP asynchronous Producer and Consumer 
 
@@ -68,11 +69,10 @@ class AsyncAMQPProducer(AMQObject):
         log.info("open connection")
         conn.channel(on_open_callback=self._on_open_channel)
 
-    @coroutine
     def _on_open_channel(self, channel):
         log = self._get_log("_on_open_channel")
         log.info("open channel")
-        yield tornado.gen.Task(channel.exchange_declare, exchange=self._exchange_name,
+        tornado.gen.Task(channel.exchange_declare, exchange=self._exchange_name,
                                exchange_type=self._exchange_type)
         channel.basic_publish(exchange=self._exchange_name, routing_key=self._routing_key, body=self._message)
         channel.close()
@@ -150,16 +150,15 @@ class AsyncAMQPConsumer(AMQObject):
             log.error("message process failed")
             pass
 
-    @coroutine
     def _on_open_channel(self, channel):
         self._channel = channel
         log = self._get_log("_on_open_channel")
         log.info("open channel")
-        yield tornado.gen.Task(self._channel.exchange_declare, exchange=self._exchange_name,
+        tornado.gen.Task(self._channel.exchange_declare, exchange=self._exchange_name,
                                exchange_type=self._exchange_type)
-        yield tornado.gen.Task(self._channel.queue_declare, queue=self._queue_name)
+        tornado.gen.Task(self._channel.queue_declare, queue=self._queue_name)
         for binding_key in self._routing_keys:
-            yield tornado.gen.Task(self._channel.queue_bind, exchange=self._exchange_name,
+            tornado.gen.Task(self._channel.queue_bind, exchange=self._exchange_name,
                                    routing_key=binding_key, queue=self._queue_name)
         self._channel.basic_consume(consumer_callback=self._process, queue=self._queue_name)
 
@@ -192,12 +191,12 @@ if __name__ == "__main__":
     _publish_routing_keys = "info"
     _message = "A critical kernel"
     _receive_routing_keys = ["error", "info"]
-    _queue_name = "name"
-    p = AsyncAMQPProducer(_url, _message, _exchange_name, _publish_routing_keys, io_loop=_io_loop)
+    _queue_name = "name" + str(uuid.uuid4())
+    p = AsyncAMQPProducer(_url, "info kernel", _exchange_name, "info", io_loop=_io_loop)
     p.publish()
-    p = AsyncAMQPProducer(_url, "error kernel", _exchange_name, _publish_routing_keys, io_loop=_io_loop)
+    p = AsyncAMQPProducer(_url, "debug kernel", _exchange_name, "debug", io_loop=_io_loop)
     p.publish()
-    c = AsyncAMQPConsumer(_url, callback, _exchange_name, _receive_routing_keys, "queue_name", io_loop=_io_loop)
+    c = AsyncAMQPConsumer(_url, callback, _exchange_name, _receive_routing_keys, "queue_name121", io_loop=_io_loop)
     c.consume()
     tornado.ioloop.IOLoop().current().start()
 
