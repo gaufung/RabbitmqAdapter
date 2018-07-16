@@ -4,8 +4,8 @@ import logging
 import time
 import functools
 import tornado.ioloop
-from async.async_amqp import AsyncAMQPProducer, AsyncAMQPConsumer
-from async.async_amqp_rpc import AsyncAMQPClient, AsyncAMQPServer
+from rabbitmq.async_amqp import AsyncAMQPProducer, AsyncAMQPConsumer
+from rabbitmq.async_amqp_rpc import AsyncAMQPClient, AsyncAMQPServer
 
 
 logging.basicConfig(level=logging.INFO)

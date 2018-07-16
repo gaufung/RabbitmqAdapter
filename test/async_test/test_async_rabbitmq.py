@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 import unittest
-from async.rabbitmq_client import SyncAMQPProducer, AsyncAMQPConsumer, AMQPError
+from rabbitmq.rabbitmq_client import SyncAMQPProducer, AsyncAMQPConsumer, AMQPError
 from tornado.queues import Queue
 from tornado.testing import AsyncTestCase, gen_test
 from tornado.ioloop import IOLoop

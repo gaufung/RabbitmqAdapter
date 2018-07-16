@@ -2,7 +2,7 @@
 from __future__ import unicode_literals
 import unittest
 from tornado.testing import AsyncTestCase, gen_test
-from async.rabbitmq_metrics import RabbitMQMetrics
+from rabbitmq.rabbitmq_metrics import RabbitMQMetrics
 
 
 class TestRabbitMQMetrics(AsyncTestCase):

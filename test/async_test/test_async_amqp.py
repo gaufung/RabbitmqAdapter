@@ -5,7 +5,7 @@ from tornado.queues import Queue
 import uuid
 import logging
 from tornado.testing import AsyncTestCase, gen_test
-from async.async_amqp import AsyncAMQPProducer, AsyncAMQPConsumer
+from rabbitmq.async_amqp import AsyncAMQPProducer, AsyncAMQPConsumer
 
 
 class TestAsyncProducerConsumer(AsyncTestCase):
