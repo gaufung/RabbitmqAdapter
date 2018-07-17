@@ -46,17 +46,18 @@ class RabbitMQMetrics(object):
         return url_parameters.credentials.username, url_parameters.credentials.password, url_root
 
     @gen.coroutine
-    def metrics(self, queue_name, io_loop=None):
+    def metrics(self, queue_name, timeout=None, io_loop=None):
         """
         metrics of RabbitMQ by given queue name
         :param queue_name: queue name
+        :param timeout: request timeout
         :param io_loop: ioloop
         :return: dictionary contains ('name', 'message', 'messages_unacknowledged', 'consumers') fields
         """
         log = self._get_log("metrics")
         log.info("queue name %s" % (queue_name,))
         try:
-            response = yield self._fetch(queue_name, io_loop)
+            response = yield self._fetch(queue_name,timeout=timeout, io_loop=io_loop)
             log.info("response %s" % (response,))
             if response.code != 200:
                 err_msg = "fail to get metrics from RabbitMQ. response code %d" % response.code
@@ -70,12 +71,12 @@ class RabbitMQMetrics(object):
             log.error("exception %s" % (e.value,))
             raise
 
-    def _fetch(self, queue_name, io_loop=None):
+    def _fetch(self, queue_name, timeout=None, io_loop=None):
         url = self.url_root + url_quote(queue_name)
         if io_loop is None:
             io_loop = IOLoop.current()
         client = AsyncHTTPClient(io_loop)
-        request = HTTPRequest(url, headers={"content-type": "application/json"},
+        request = HTTPRequest(url, request_timeout=timeout, headers={"content-type": "application/json"},
                               auth_username=self.user_name, auth_password=self.password)
         return client.fetch(request)
 
