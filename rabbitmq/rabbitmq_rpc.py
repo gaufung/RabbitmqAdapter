@@ -16,18 +16,23 @@ __author__ = ["feng.gao@aispeech.com"]
 class AMQPRpcObject(object):
     EXCHANGE_TYPE = "topic"
     LOCALHOST = "127.0.0.1"
+    LOGGER_HANDLER = None
 
     @classmethod
     def _get_log(cls, *names):
-        return logging.getLogger(".".join((cls.__module__, cls.__name__) + names))
+        logger =  logging.getLogger(".".join((cls.__module__, cls.__name__) + names))
+        if AMQPRpcObject.LOGGER_HANDLER is not None:
+            logger.addHandler(AMQPRpcObject.LOGGER_HANDLER)
+        return logger
 
-    def __init__(self, amqp_url):
+    def __init__(self, amqp_url, logger_handler):
         """
         initialize an AMQPRpcObject instance
         :param amqp_url: amqp url, it can be either 'amqp://dev:aispeech2018@10.12.7.22:5672/' or "127.0.0.1"
         """
         self._parameter = pika.ConnectionParameters(amqp_url) if amqp_url == self.LOCALHOST else \
             pika.URLParameters(amqp_url)
+        AMQPRpcObject.LOGGER_HANDLER = logger_handler
 
 
 class AsyncRabbitMQ(AMQPRpcObject):
@@ -39,13 +44,14 @@ class AsyncRabbitMQ(AMQPRpcObject):
         - rpc server
     All of above clients share the only one connection.
     """
-    def __init__(self, amqp_url, io_loop=None):
+    def __init__(self, amqp_url, io_loop=None, logger_handler=None):
         """
         Initialize a AsyncRabbitMQ instance
         :param amqp_url: amqp_url: amqp url, it can be either 'amqp://dev:aispeech2018@10.12.7.22:5672/' or "127.0.0.1"
         :param io_loop: io_loop, the default is tornado.ioloop.IOLoop.current()
+        :param logger_handler: handler for logging
         """
-        super(AsyncRabbitMQ, self).__init__(amqp_url)
+        super(AsyncRabbitMQ, self).__init__(amqp_url, logger_handler)
         if io_loop is None:
             io_loop = IOLoop.current()
         self._io_loop = io_loop
@@ -141,6 +147,7 @@ class AsyncRabbitMQ(AMQPRpcObject):
         :param queue_name: binding queue
         :param routing_key: routing key
         :param handler: handler for message
+        :type handler: signature f(channel, method, header, body). return value is true or false
         :return: None
         """
         log = self._get_log("consume")
@@ -169,21 +176,23 @@ class AsyncRabbitMQ(AMQPRpcObject):
     def _consume_handler_delivery(self, channel, method, header, body):
         log = self._get_log("_consume_handler_delivery")
         log.info("consume body %s" % (body,))
-        self._io_loop.spawn_callback(self._consume_process_message, body=body, channel=channel, method=method,
-                                     header=header)
+        self._io_loop.spawn_callback(self._consume_process_message,
+                                     channel=channel,
+                                     method=method,
+                                     header=header,
+                                     body=body)
 
     @coroutine
-    def _consume_process_message(self, body, channel, method, header):
+    def _consume_process_message(self, channel, method, header, body):
         log = self._get_log("_consume_process_message")
         log.info("start processing")
         handler = self._lookup_handler(method.routing_key)
         if handler is None:
-            log.info("routing_key %s handler not found" % method.routing_key)
+            log.error("routing_key %s handler not found" % method.routing_key)
             return
-        result = yield handler(body)
+        result = yield handler(channel, method, header, body)
         if result:
             log.info("message process success")
-            channel.basic_ack(delivery_tag=method.delivery_tag)
         else:
             log.error("message process failed")
             pass
@@ -295,7 +304,7 @@ class AsyncRabbitMQ(AMQPRpcObject):
         log.info("start process")
         handler = self._lookup_handler(method.routing_key, is_consume=False)
         if handler is None:
-            log.info("handler not found")
+            log.error("handler not found")
             return
         response = yield handler(body)
         if response is not None:
@@ -308,7 +317,7 @@ class AsyncRabbitMQ(AMQPRpcObject):
                                         body=str(response))
             self._channel.basic_ack(delivery_tag=method.delivery_tag)
         else:
-            log.info("response is None")
+            log.error("response is None")
 
     @coroutine
     def call(self, exchange_name, queue_name, routing_key, body, timeout=None):
@@ -371,11 +380,11 @@ class AsyncRabbitMQ(AMQPRpcObject):
         if timeout is not None:
             log.info("add timeout %s" % timeout)
             self._io_loop.add_timeout(datetime.timedelta(days=0, seconds=timeout),
-                                      functools.partial(self._on_timeout,correlation_id=corr_id))
+                                      functools.partial(self._on_timeout, correlation_id=corr_id))
         result = yield queue.get()
         raise Return(result)
 
-    def _client_on_message(self,ch, method, props, body):
+    def _client_on_message(self, ch, method, props, body):
         log = self._get_log("_client_on_message")
         log.info("receive body: %s" % body)
         corr_id = props.correlation_id
