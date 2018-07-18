@@ -68,7 +68,7 @@ class RabbitMQMetrics(object):
         except gen.Return:
             raise
         except Exception as e:
-            log.error("exception %s" % (e.value,))
+            log.error("exception %s" % (e,))
             raise
 
     def _fetch(self, queue_name, timeout=None, io_loop=None):

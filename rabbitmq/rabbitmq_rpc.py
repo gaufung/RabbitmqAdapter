@@ -38,10 +38,10 @@ class AMQPRpcObject(object):
 class AsyncRabbitMQ(AMQPRpcObject):
     """
     It is an `Everything-in-One` RabbitMQ client, including features as follows:
-        - producer
-        - consumer
-        - rpc client
-        - rpc server
+        - producer => `publish` method
+        - consumer => `consume` method
+        - rpc client => `service` method
+        - rpc server => `call` method
     All of above clients share the only one connection.
     """
     def __init__(self, amqp_url, io_loop=None, logger_handler=None):
@@ -101,6 +101,7 @@ class AsyncRabbitMQ(AMQPRpcObject):
             self._channel.exchange_declare(callback=self._on_exchange_declare_ok,
                                            exchange=exchange_name,
                                            exchange_type=self.EXCHANGE_TYPE,
+                                           durable=True,
                                            passive=passive,
                                            auto_delete=True)
             self._exchange_declare_dict[exchange_name].put(True)
@@ -114,6 +115,74 @@ class AsyncRabbitMQ(AMQPRpcObject):
         log.info("exchange declare ok")
         pass
 
+    def _on_queue_declare(self, queue_name):
+        self._channel.queue_declare(callback=self._on_queue_declare_ok,
+                                    queue=queue_name,
+                                    durable=True,
+                                    exclusive=False,
+                                    auto_delete=False)
+        self._queue_declare_dict[queue_name].put(True)
+
+    def _on_queue_declare_ok(self, method_frame):
+        log = self._get_log("_on_queue_declare_ok")
+        log.info("queue declare ok")
+
+    def _on_queue_bind(self, exchange_name, queue_name, routing_key):
+        log = self._get_log("_on_queue_bind")
+        log.info("exchange: %s; queue  %s; routing_key %s", exchange_name, queue_name, routing_key)
+        self._channel.queue_bind(callback=self._on_queue_bind_ok,
+                                 queue=queue_name,
+                                 exchange=exchange_name,
+                                 routing_key=routing_key)
+        self._queue_bind_dict[queue_name].put(True)
+
+    def _on_queue_bind_ok(self, method_frame):
+        log = self._get_log("_on_queue_bind_ok")
+        log.info("queue binds ok")
+
+    @coroutine
+    def _initialize(self, exchange_name, passive, queue_name=None, routing_key=None):
+        """
+        initialize rabbitmq connection
+
+        If passive set, the server will reply with Declare-Ok if the exchange
+        already exists with the same name, and raise an error if not and if the
+        exchange does not already exist, the server MUST raise a channel
+        exception with reply code 404 (not found).
+
+        - For publisher, queue_name and routing_key must be None. Because they are done by consumer. `passive` is True
+        - For consumer, queue_nae and routing_key Must not be none. `passive` is False
+        - For Call, queue_name and routing_key are same as they are all callback queue. `passive` is True
+        - For Service, queue_name and routing_key determinate the message it received from caller. `passive` is False
+        :param exchange_name: name of exchange to be declared
+        :param passive: whether exchange exists
+        :param queue_name: queue name to be declared and bound
+        :param routing_key: routing key to be bound. default exchange is topic
+        :return: None
+        """
+        log = self._get_log("_initialize")
+        if self._channel is None:
+            log.info("start connecting")
+            self._connect()
+            yield self._channel_queue.get()
+        if exchange_name not in self._exchange_declare_dict:
+            log.info("declaring exchange: %s" % exchange_name)
+            self._exchange_declare_dict[exchange_name] = Queue(maxsize=1)
+            self._on_exchange_declare(exchange_name, passive)
+            yield self._exchange_declare_dict[exchange_name].get()
+        if queue_name is not None and queue_name not in self._queue_declare_dict:
+            log.info("declaring queue %s" % queue_name)
+            self._queue_declare_dict[queue_name] = Queue(maxsize=1)
+            self._on_queue_declare(queue_name)
+            yield self._queue_declare_dict[queue_name].get()
+        if queue_name is not None and \
+                routing_key is not None and \
+                queue_name not in self._queue_bind_dict:
+            log.info("queue %s binds %s routing key" % (queue_name, routing_key))
+            self._queue_bind_dict[queue_name] = Queue(maxsize=1)
+            self._on_queue_bind(exchange_name, queue_name, routing_key)
+            yield self._queue_bind_dict[queue_name].get()
+
     @coroutine
     def publish(self, exchange_name, routing_key, message, properties=None):
         """
@@ -125,15 +194,8 @@ class AsyncRabbitMQ(AMQPRpcObject):
         :return:
         """
         log = self._get_log("publish")
-        if self._channel is None:
-            log.info("publish start connect")
-            self._connect()
-            yield self._channel_queue.get()
-        if exchange_name not in self._exchange_declare_dict:
-            log.info("declaring exchange: %s" % exchange_name)
-            self._exchange_declare_dict[exchange_name] = Queue(maxsize=1)
-            self._on_exchange_declare(exchange_name, True)
-            yield self._exchange_declare_dict[exchange_name].get()
+        yield self._initialize(exchange_name, True)
+        log.info("start publishing: %s" % message)
         self._channel.basic_publish(exchange=exchange_name,
                                     routing_key=routing_key,
                                     body=message,
@@ -151,25 +213,8 @@ class AsyncRabbitMQ(AMQPRpcObject):
         :return: None
         """
         log = self._get_log("consume")
-        if self._channel is None:
-            log.info("consume connects")
-            self._connect()
-            yield self._channel_queue.get()
-        if exchange_name not in self._exchange_declare_dict:
-            log.info("consume declares exchange %s" % exchange_name)
-            self._exchange_declare_dict[exchange_name] = Queue(maxsize=1)
-            self._on_exchange_declare(exchange_name, False)
-            yield self._exchange_declare_dict[exchange_name].get()
-        if queue_name not in self._queue_declare_dict:
-            log.info("consume declares queue %s" % queue_name)
-            self._queue_declare_dict[queue_name] = Queue(maxsize=1)
-            self._on_queue_declare(queue_name)
-            yield self._queue_declare_dict[queue_name].get()
-        if queue_name not in self._queue_bind_dict:
-            log.info("consume binds queue %s" % queue_name)
-            self._queue_bind_dict[queue_name] = Queue(maxsize=1)
-            self._on_queue_bind(exchange_name, queue_name, routing_key)
-            yield self._queue_bind_dict[queue_name].get()
+        yield self._initialize(exchange_name, False, queue_name, routing_key)
+        log.info("start consuming")
         self._consumer_routing_key_handlers_dict[self._routing_key_pattern(routing_key)] = handler
         self._channel.basic_consume(self._consume_handler_delivery, queue=queue_name)
 
@@ -196,31 +241,6 @@ class AsyncRabbitMQ(AMQPRpcObject):
         else:
             log.error("message process failed")
             pass
-
-    def _on_queue_declare(self, queue_name):
-        self._channel.queue_declare(callback=self._on_queue_declare_ok,
-                                    queue=queue_name,
-                                    durable=True,
-                                    exclusive=False,
-                                    auto_delete=True)
-        self._queue_declare_dict[queue_name].put(True)
-
-    def _on_queue_declare_ok(self, method_frame):
-        log = self._get_log("_on_queue_declare_ok")
-        log.info("queue declare ok")
-
-    def _on_queue_bind(self, exchange_name, queue_name, routing_key):
-        log = self._get_log("_on_queue_bind")
-        log.info("exchange: %s; queue  %s; routing_key %s", exchange_name, queue_name, routing_key)
-        self._channel.queue_bind(callback=self._on_queue_bind_ok,
-                                 queue=queue_name,
-                                 exchange=exchange_name,
-                                 routing_key=routing_key)
-        self._queue_bind_dict[queue_name].put(True)
-
-    def _on_queue_bind_ok(self, method_frame):
-        log = self._get_log("_on_queue_bind_ok")
-        log.info("queue binds ok")
 
     @staticmethod
     def _routing_key_pattern(routing_key):
@@ -267,25 +287,8 @@ class AsyncRabbitMQ(AMQPRpcObject):
         :return: None
         """
         log = self._get_log("service")
-        if self._channel is None:
-            log.info("service connects")
-            self._connect()
-            yield self._channel_queue.get()
-        if exchange_name not in self._exchange_declare_dict:
-            log.info("service declares exchange %s " % exchange_name)
-            self._exchange_declare_dict[exchange_name] = Queue(maxsize=1)
-            self._on_exchange_declare(exchange_name, False)
-            yield self._exchange_declare_dict[exchange_name].get()
-        if queue_name not in self._queue_declare_dict:
-            log.info("service declare queue %s" % queue_name)
-            self._queue_declare_dict[queue_name] = Queue(maxsize=1)
-            self._on_queue_declare(queue_name)
-            yield self._queue_declare_dict[queue_name].get()
-        if queue_name not in self._queue_bind_dict:
-            log.info("service bind queue")
-            self._queue_bind_dict[queue_name] = Queue(maxsize=1)
-            self._on_queue_bind(exchange_name, queue_name, routing_key)
-            yield self._queue_bind_dict[queue_name].get()
+        yield self._initialize(exchange_name, False, queue_name, routing_key)
+        log.info("start servicing")
         self._service_routing_key_handlers_dict[self._routing_key_pattern(routing_key)] = handler
         self._channel.basic_consume(self._service_handler_delivery, queue=queue_name)
 
@@ -320,52 +323,27 @@ class AsyncRabbitMQ(AMQPRpcObject):
             log.error("response is None")
 
     @coroutine
-    def call(self, exchange_name, queue_name, routing_key, body, timeout=None):
+    def call(self, exchange_name, routing_key, body, callback_queue=None, timeout=None):
         """
         call client for rpc.
         :param exchange_name: exchange name
-        :param queue_name: queue name
         :param routing_key: routing key
         :param body: send body
+        :param callback_queue: response callback queue, if it is None, `call` method will generate it randomly
         :param timeout: timeout after rpc call
         :return: result
         """
         log = self._get_log("call")
-        callback_queue = "rpc_answer_%s" % str(uuid.uuid4())
+        if callback_queue is None:
+            callback_queue = "rpc_answer_%s" % str(uuid.uuid4())
+            log.info("generating callback queue  %s randomly")
         corr_id = str(uuid.uuid4())
         log.info("generating correlation id %s" % corr_id)
         log.info("to send body %s" % body)
         queue = Queue(maxsize=1)
         self._reply_queue_dict[corr_id] = queue
-        # open connection and send message
-        if self._channel is None:
-            log.info("client connect")
-            self._connect()
-            yield self._channel_queue.get()
-        if exchange_name not in self._exchange_declare_dict:
-            log.info("client declares exchange %s. " % exchange_name)
-            self._exchange_declare_dict[exchange_name] = Queue(maxsize=1)
-            self._on_exchange_declare(exchange_name, True)
-            yield self._exchange_declare_dict[exchange_name].get()
-        if queue_name not in self._queue_declare_dict:
-            log.info("client declares queue: %s." % queue_name)
-            self._queue_declare_dict[queue_name] = Queue(maxsize=1)
-            self._on_queue_declare(queue_name)
-            yield self._queue_declare_dict[queue_name].get()
-        if callback_queue not in self._queue_declare_dict:
-            log.info("client declares queue: %s." % callback_queue)
-            self._queue_declare_dict[callback_queue] = Queue(maxsize=1)
-            self._on_queue_declare(callback_queue)
-            yield self._queue_declare_dict[callback_queue].get()
-        if queue_name not in self._queue_bind_dict:
-            log.info("client binds queue %s" % queue_name)
-            self._queue_bind_dict[queue_name] = Queue(maxsize=1)
-            self._on_queue_bind(exchange_name, queue_name, routing_key)
-            yield self._queue_bind_dict[queue_name].get()
-        if callback_queue not in self._queue_bind_dict:
-            log.info("client binds queue %s" % callback_queue)
-            self._queue_bind_dict[callback_queue] = Queue(maxsize=1)
-            self._on_queue_bind(exchange_name, queue_name=callback_queue, routing_key=callback_queue)
+        yield self._initialize(exchange_name, True, callback_queue, callback_queue)
+        log.info("start calling")
         self._channel.basic_consume(self._client_on_message, queue=callback_queue)
         log.info("routing_key: %s" % routing_key)
         log.info("correlation_id: %s " % corr_id)
@@ -376,7 +354,6 @@ class AsyncRabbitMQ(AMQPRpcObject):
                                     properties=pika.BasicProperties(correlation_id=corr_id,
                                                                     reply_to=callback_queue),
                                     body=body)
-        # end up with push and wait request
         if timeout is not None:
             log.info("add timeout %s" % timeout)
             self._io_loop.add_timeout(datetime.timedelta(days=0, seconds=timeout),
@@ -407,3 +384,19 @@ class AsyncRabbitMQ(AMQPRpcObject):
             del self._reply_queue_dict[correlation_id]
         else:
             log.info("correlation_id %s doest not exist. " % correlation_id)
+
+    def close(self):
+        """
+        close connection
+        - closing channel
+        - closing connection
+        - set them with None
+        :return:
+        """
+        if self._channel is not None:
+            self._channel.close()
+        if self._connection is not None:
+            self._connection.close()
+        self._channel = None
+        self._connection = None
+
