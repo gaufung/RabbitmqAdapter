@@ -7,7 +7,7 @@ from tornado.queues import Queue
 from tornado.ioloop import IOLoop
 import logging
 
-url = '127.0.0.1'
+url = 'amqp://dev:aispeech2018@10.12.7.22:5672/'
 exchange_name = "exchange_name_" + "test"
 queue_name = "queue_name_" + "test"
 queue = Queue(maxsize=1)
