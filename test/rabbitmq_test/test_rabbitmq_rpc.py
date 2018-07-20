@@ -2,6 +2,7 @@
 from __future__ import unicode_literals
 import unittest
 import uuid
+import time
 from rabbitmq.rabbitmq_rpc import AsyncRabbitMQ
 from rabbitmq.rabbitmq_util import make_properties
 from tornado.gen import coroutine,Return, sleep
@@ -10,6 +11,7 @@ from tornado.queues import Queue
 from concurrent.futures import ThreadPoolExecutor
 
 EXECUTOR = ThreadPoolExecutor(max_workers=4)
+
 
 class TestAsyncRabbitMQPublish(AsyncTestCase):
     def setUp(self):
@@ -122,13 +124,23 @@ class TestAsyncRabbitMQCall(AsyncTestCase):
         for expect, actual in zip(values, got_values):
             self.assertEqual(str(self._fib(expect)), actual)
 
-    # this unit test will pass when debug it.
+    @coroutine
+    def fib_timeout(self, body):
+        result = yield EXECUTOR.submit(self._fib_timeout)
+        raise Return(str(result))
+
+    @staticmethod
+    def _fib_timeout():
+        time.sleep(2)
+        return "Task done"
+
     @gen_test(timeout=10)
-    def _test_call_timeout(self):
+    def test_call_timeout(self):
         yield self._client.wait_connected()
-        yield self._client.service(self._exchange, self._queue_name, "fibtimtout.*", self.fib)
-        value = yield self._client.call(self._exchange, "fibtimtout.call", str(100), "fib_call_back_queue_timeout", timeout=2)
+        yield self._client.service(self._exchange, self._queue_name, "fibtimtout.*", self.fib_timeout)
+        value = yield self._client.call(self._exchange, "fibtimtout.call", "message", "fib_call_back_queue_timeout", timeout=1)
         self.assertIsNone(value)
+        EXECUTOR.shutdown(True)
 
 
 if __name__ == "__main__":
