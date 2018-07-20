@@ -3,9 +3,12 @@ import uuid
 import logging
 import warnings
 import pika
+import functools
+import datetime
 from pika.exceptions import ChannelClosed
 from tornado.ioloop import IOLoop
-from tornado.gen import coroutine
+from tornado.gen import coroutine, Future, Task, Return
+from tornado.queues import Queue
 
 __author__ = ["feng.gao@aispeech.com"]
 
@@ -64,14 +67,6 @@ class SyncAMQPProducer(AMQPObject):
         log.info("initialize connection and channel")
         self._connection = pika.BlockingConnection(self._parameter)
         self._channel = self._connection.channel()
-        try:
-            self._channel.exchange_declare(exchange=self._exchange_name,
-                                           exchange_type=self.EXCHANGE_TYPE, passive=True)
-        except ChannelClosed as e:
-            log.error("exchange %s doesn't exist. the messages may be lost. %s"
-                            % (self._exchange_name, e))
-            raise AMQPError("exchange %s doesn't exist. the messages may be lost. %s"
-                            % (self._exchange_name, e))
 
     def _disconnect(self):
         log = self._get_log("_disconnect")
@@ -102,6 +97,7 @@ class SyncAMQPProducer(AMQPObject):
             raise AMQPError("channel is not initialized")
         properties = kwargs.pop("properties") if kwargs.has_key("properties") else None
         for message in messages:
+            log.info("sending %s" % message)
             self._channel.basic_publish(exchange=self._exchange_name,
                                         routing_key=routing_key,
                                         body=message,
@@ -115,7 +111,7 @@ class SyncAMQPProducer(AMQPObject):
         if not isinstance(messages, dict):
             log.error("messages is not dict")
             raise AMQPError("messages is not dict")
-        properties = kwargs.pop("properties")
+        properties = kwargs.pop("properties") if kwargs.has_key("properties") else None
         for routing_key, message in messages.items():
             self._channel.basic_publish(exchange=self._exchange_name,
                                         routing_key=routing_key,
@@ -127,7 +123,7 @@ class SyncAMQPProducer(AMQPObject):
         This is method doesn't recommend. using `with` context instead
         :return: None
         """
-        warnings.warn("Call connect() method", category=DeprecationWarning, stacklevel=2)
+        warnings.warn("Call connect() method, using `with` context instead.", category=DeprecationWarning, stacklevel=2)
         self._connect()
 
     def disconnect(self):
@@ -135,7 +131,7 @@ class SyncAMQPProducer(AMQPObject):
         This is method doesn't recommend. using `with` context instead
         :return: None
         """
-        warnings.warn("Call disconnect() method", category=DeprecationWarning, stacklevel=2)
+        warnings.warn("Call disconnect() method, using `with` context instead.", category=DeprecationWarning, stacklevel=2)
         self._disconnect()
 
 
@@ -161,57 +157,102 @@ class AsyncAMQPConsumer(AMQPObject):
             queue_name = "consume_queue_" + str(uuid.uuid4())
         if io_loop is None:
             io_loop = IOLoop.current()
-        self._connection = None
-        self._channel = None
-        self._amq_url = amqp_url
+        self._connection_pool = Queue(maxsize=1)
+        self._channel_queue = Queue(maxsize=1)
         self._exchange_name = exchange_name
         self._handler = handler
         self._routing_key = routing_key
         self._queue_name = queue_name
         self._io_loop = io_loop
+        self._connect()
 
-    def consume(self):
-        self._connection=pika.TornadoConnection(self._parameter,
-                                                on_open_callback=self._on_open_connection,
-                                                on_open_error_callback=self._on_open_connection_error,
-                                                on_close_callback=self._on_close_connection,
-                                                custom_ioloop=self._io_loop)
+    def _connect(self):
+        pika.TornadoConnection(self._parameter,
+                               on_open_callback=self._on_open_connection,
+                               on_open_error_callback=self._on_open_connection_error,
+                               on_close_callback=self._on_close_connection,
+                               custom_ioloop=self._io_loop)
 
     def _on_open_connection(self, conn):
         log = self._get_log("_on_open_connection")
         log.info("starting open channel")
-        self._connection.channel(self._on_channel_open)
+        self._connection_pool.put(conn)
 
-    def _on_channel_open(self, channel):
-        log = self._get_log("_on_channel_open")
-        self._channel = channel
-        log.info("declaring exchange %s " % self._exchange_name)
-        self._channel.exchange_declare(callback=self._on_exchange_declare,
-                                       exchange=self._exchange_name,
-                                       auto_delete=True,
-                                       exchange_type=self.EXCHANGE_TYPE)
+    @coroutine
+    def is_connected(self):
+        conn = yield self._connection_pool.get()
+        self._connection_pool.put(conn)
 
-    def _on_exchange_declare(self, method_frame):
+    def _on_exchange_declare(self, channel, exchange_name, done_queue):
         log = self._get_log("_on_exchange_declare")
-        log.info("declaring queue %s" % self._queue_name)
-        self._channel.queue_declare(callback=self._on_queue_declared,
-                                    queue=self._queue_name,
-                                    durable=True,
-                                    exclusive=False,
-                                    auto_delete=True)
+        log.info("start declaring exchange")
+        channel.exchange_declare(callback=functools.partial(self._on_exchange_declare_ok,
+                                                            done_queue=done_queue),
+                                 exchange=exchange_name,
+                                 exchange_type=self.EXCHANGE_TYPE,
+                                 durable=False,
+                                 auto_delete=True)
 
-    def _on_queue_declared(self, method_frame):
-        log = self._get_log("_on_queue_declared")
-        log.info("binding queue %s" % self._queue_name)
-        self._channel.queue_bind(callback=self._on_queue_bind,
-                                 queue=self._queue_name,
-                                 exchange=self._exchange_name,
-                                 routing_key=self._routing_key)
+    def _on_exchange_declare_ok(self, unframe, done_queue):
+        log = self._get_log("_on_exchange_declare_ok")
+        log.info("declared exchange")
+        done_queue.put(True)
 
-    def _on_queue_bind(self, method_frame):
+    def _on_queue_declare(self, channel, queue_name, done_queue):
+        log = self._get_log("_on_queue_declare")
+        log.info("start declaring queue")
+        channel.queue_declare(callback=functools.partial(self._on_queue_declare_ok,
+                                                         done_queue=done_queue),
+                              queue=queue_name,
+                              durable=False,
+                              exclusive=False,
+                              auto_delete=True)
+
+    def _on_queue_declare_ok(self, unframe, done_queue):
+        log = self._get_log("_on_queue_declare_ok")
+        log.info("declared queue")
+        done_queue.put(True)
+
+    def _on_queue_bind(self, channel, exchange_name, queue_name, routing_key, done_queue):
         log = self._get_log("_on_queue_bind")
-        log.info("starting consume")
-        self._channel.basic_consume(self._handler_delivery, queue=self._queue_name)
+        log.info("start binding queue")
+        channel.queue_bind(callback=functools.partial(self._on_queue_bind_ok,
+                                                      done_queue=done_queue),
+                           queue=queue_name,
+                           exchange=exchange_name,
+                           routing_key=routing_key)
+
+    def _on_queue_bind_ok(self, unframe, done_queue):
+        log = self._get_log("_on_queue_bind_ok")
+        log.info("bound queue")
+        done_queue.put(True)
+
+    @coroutine
+    def _initialize(self, channel, exchange_name, queue_name, routing_key):
+        done_queue = Queue(maxsize=1)
+        self._on_exchange_declare(channel, exchange_name, done_queue)
+        yield done_queue.get()
+        self._on_queue_declare(channel, queue_name, done_queue)
+        yield done_queue.get()
+        self._on_queue_bind(channel, exchange_name, queue_name, routing_key, done_queue)
+        yield done_queue.get()
+
+    def _open_channel(self, channel, channel_queue):
+        log = self._get_log("_open_channel")
+        log.info("open a channel")
+        channel_queue.put(channel)
+
+    @coroutine
+    def consume(self):
+        log = self._get_log("consume")
+        conn = yield self._connection_pool.get()
+        self._connection_pool.put(conn)
+        channel_queue = Queue(maxsize=1)
+        conn.channel(functools.partial(self._open_channel, channel_queue=channel_queue))
+        channel = yield channel_queue.get()
+        yield self._initialize(channel, self._exchange_name, self._queue_name, self._routing_key)
+        log.info("starting consuming")
+        channel.basic_consume(self._handler_delivery, queue=self._queue_name)
 
     def _handler_delivery(self, channel, method, header, body):
         log = self._get_log("_handler_delivery")
@@ -235,10 +276,43 @@ class AsyncAMQPConsumer(AMQPObject):
     def _on_close_connection(self, connection, reason_code, reason_tex):
         log = self._get_log("_on_close_connection")
         log.info("close connection. reason code %s, reason text %s" % (reason_code, reason_tex))
+        self._connection_pool = Queue(maxsize=1)
 
     def _on_open_connection_error(self, error):
         log = self._get_log("_on_open_connection_error")
+        self._connection_pool = Queue(maxsize=1)
         if isinstance(error, str):
             log.error("error: %s" % (error,))
         else:
             log.error("exception: %s" % (error,))
+
+
+url = "amqp://dev:aispeech2018@10.12.7.22:5672/"
+io_loop = IOLoop.current()
+
+
+@coroutine
+def _process(channel, method, header, body):
+    print(body)
+    raise Return(True)
+
+
+r = AsyncAMQPConsumer(url, exchange_name="another_exchange", routing_key="dog.*", handler=_process, io_loop=io_loop)
+
+
+@coroutine
+def init():
+    yield r.consume()
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.ERROR)
+    io_loop.spawn_callback(init)
+    p = SyncAMQPProducer(url, exchange_name="another_exchange")
+    p.connect()
+
+    def _publish():
+        p.publish("dog.Yellow", "a dog yellow")
+    for _ in range(1000):
+        io_loop.add_timeout(datetime.timedelta(days=0, seconds=3), _publish)
+    io_loop.start()

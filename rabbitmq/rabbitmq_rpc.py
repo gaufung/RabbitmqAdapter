@@ -84,6 +84,19 @@ class AsyncRabbitMQ(AMQPRpcObject):
         self._try_connection(functools.partial(self._init_open_connection,
                                                pool=self._service_connection))
 
+    @coroutine
+    def wait_connected(self):
+        """
+        waiting conenction pool, consumer connection, service connection establish.
+        :return:
+        """
+        conn = yield self._connection_pool.get()
+        self._connection_pool.put(conn)
+        conn = yield self._consumer_connection.get()
+        self._consumer_connection.put(conn)
+        conn = yield self._service_connection.get()
+        self._service_connection.put(conn)
+
     def _try_connection(self, open_callback):
         pika.TornadoConnection(parameters=self._parameter,
                                on_open_callback=open_callback,
@@ -405,7 +418,7 @@ class AsyncRabbitMQ(AMQPRpcObject):
         if timeout is not None:
             log.info("add timeout %s" % timeout)
             self._io_loop.add_timeout(datetime.timedelta(days=0, seconds=timeout),
-                                      functools.partial(self._on_timeout, correlation_id=corr_id))
+                                      functools.partial(self._on_timeout, corr_id=corr_id))
         result = yield queue.get()
         raise Return(result)
 
@@ -417,18 +430,18 @@ class AsyncRabbitMQ(AMQPRpcObject):
             log.info("get response")
             self._reply_queue_dict[corr_id].put(body)
             log.info("delete corr_id %s in _reply_queue." % corr_id)
-            del self._reply_queue_dict[corr_id]
+            #del self._reply_queue_dict[corr_id]
         else:
             log.info("valid response")
             pass
 
     @coroutine
-    def _on_timeout(self, correlation_id):
+    def _on_timeout(self, corr_id):
         log = self._get_log("_on_timeout")
         log.info("timeout")
-        if correlation_id in self._reply_queue_dict:
-            self._reply_queue_dict[correlation_id].put(None)
-            log.info("delete correlation_id %s in _reply_queue_dict" % correlation_id)
-            del self._reply_queue_dict[correlation_id]
+        if corr_id in self._reply_queue_dict:
+            self._reply_queue_dict[corr_id].put(None)
+            log.info("delete correlation_id %s in _reply_queue_dict" % corr_id)
+            del self._reply_queue_dict[corr_id]
         else:
-            log.info("correlation_id %s doest not exist. " % correlation_id)
+            log.info("correlation_id %s doest not exist. " % corr_id)
