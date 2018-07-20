@@ -365,16 +365,16 @@ class AsyncRabbitMQ(AMQPRpcObject):
         3. create callback queue if it doesn't give
         4. create a unique `corr_id` for current call and a Queue(maxsize=1) instance. Combine them as key-value pair
         5. create channel to wait result
-        4. initialize tasks:
+        6. initialize tasks:
             a. declare exchange
             b. declare queue (callback_queue)
             c. bind queue to exchange
-        5. start consuming (waiting result from service)
-        6. create a new channel to send request
-        7. send request to server
-        8. close sending channel
-        9. if timeout is set, start a coroutine when timeout
-        10. wait result from previous `Queue(maxsize=1)` (asynchronous)
+        7. start consuming (waiting result from service)
+        8. create a new channel to send request
+        9. send request to server
+        10. close sending channel
+        11. if timeout is set, start a coroutine when timeout
+        12. wait result from previous `Queue(maxsize=1)` (asynchronous)
         :param exchange_name:
         :param routing_key:
         :param body:
@@ -430,7 +430,7 @@ class AsyncRabbitMQ(AMQPRpcObject):
             log.info("get response")
             self._reply_queue_dict[corr_id].put(body)
             log.info("delete corr_id %s in _reply_queue." % corr_id)
-            #del self._reply_queue_dict[corr_id]
+            del self._reply_queue_dict[corr_id]
         else:
             log.info("valid response")
             pass
