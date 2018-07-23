@@ -4,10 +4,8 @@ import logging
 import warnings
 import pika
 import functools
-import datetime
-from pika.exceptions import ChannelClosed
 from tornado.ioloop import IOLoop
-from tornado.gen import coroutine, Future, Task, Return
+from tornado.gen import coroutine
 from tornado.queues import Queue
 
 __author__ = ["feng.gao@aispeech.com"]
@@ -285,34 +283,3 @@ class AsyncAMQPConsumer(AMQPObject):
             log.error("error: %s" % (error,))
         else:
             log.error("exception: %s" % (error,))
-
-
-url = "amqp://dev:aispeech2018@10.12.7.22:5672/"
-io_loop = IOLoop.current()
-
-
-@coroutine
-def _process(channel, method, header, body):
-    print(body)
-    raise Return(True)
-
-
-r = AsyncAMQPConsumer(url, exchange_name="another_exchange", routing_key="dog.*", handler=_process, io_loop=io_loop)
-
-
-@coroutine
-def init():
-    yield r.consume()
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.ERROR)
-    io_loop.spawn_callback(init)
-    p = SyncAMQPProducer(url, exchange_name="another_exchange")
-    p.connect()
-
-    def _publish():
-        p.publish("dog.Yellow", "a dog yellow")
-    for _ in range(1000):
-        io_loop.add_timeout(datetime.timedelta(days=0, seconds=3), _publish)
-    io_loop.start()

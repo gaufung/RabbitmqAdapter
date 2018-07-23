@@ -6,7 +6,7 @@ import uuid
 from tornado.gen import coroutine,Return
 from tornado.testing import AsyncTestCase, gen_test
 from tornado.queues import Queue
-from rabbitmq.rabbitmq_client import AsyncAMQPConsumer, SyncAMQPProducer
+from rabbitmq.rabbitmq_client import AsyncAMQPConsumer, SyncAMQPProducer, AMQPError
 from rabbitmq.rabbitmq_util import make_properties
 
 
@@ -60,6 +60,26 @@ class TestRabbitMQClient(AsyncTestCase):
             value = yield self.queue.get()
             self.assertTrue(value in result_set)
 
+    @gen_test
+    def test_with_context(self):
+        yield self.r.is_connected()
+        yield self.r.consume()
+        with SyncAMQPProducer(self._url,"another_exchange") as p:
+            p.publish("dog.purple", "A purple dog")
+        value = yield self.queue.get()
+        self.assertEqual(value, "A purple dog")
+
+    @gen_test
+    def test_with_expectation(self):
+        p = SyncAMQPProducer(self._url, "another_exchange")
+        with self.assertRaises(AMQPError):
+            p.publish("dog.cat", "A cat like dog")
+        with self.assertRaises(AMQPError):
+            p.publish_messages({"dog.pig": "A dog like pig", "cat.cat":"A do cat"})
+        with SyncAMQPProducer(self._url, "another_exchange") as pp:
+            with self.assertRaises(AMQPError):
+                pp.publish_messages("not a dictionary")
+
 
 class TestRabbitMQClientWithReply(AsyncTestCase):
     @coroutine
@@ -94,7 +114,7 @@ class TestRabbitMQClientWithReply(AsyncTestCase):
         self.fib_back_queue = "fibnacci_call_back"
         self.corr_id = str(uuid.uuid4())
         self.r = AsyncAMQPConsumer(self._url, exchange_name="fib_exchange", routing_key="fib.*",
-                                   handler=self._process, io_loop=self.io_loop)
+                                   handler=self._process, io_loop=None)
         self.callback_r = AsyncAMQPConsumer(self._url, exchange_name="fib_exchange", routing_key=self.fib_back_queue,
                                    queue_name=self.fib_back_queue, handler=self._fib_back, io_loop=self.io_loop)
         self.p = SyncAMQPProducer(self._url, exchange_name="fib_exchange")

@@ -68,7 +68,9 @@ class AsyncRabbitMQ(AMQPRpcObject):
         self._is_auto_delete = is_auto_delete
         self._consumer_routing_key_handlers_dict = dict()
         self._service_routing_key_handlers_dict = dict()
-        self._reply_queue_dict=dict()
+        self._reply_queue_dict = dict()
+        self._call_register_set = set()
+        self._call_channel_dict = dict()
         self._initialize_connection_pool(pool_size)
 
     def _initialize_connection_pool(self, size):
@@ -129,7 +131,7 @@ class AsyncRabbitMQ(AMQPRpcObject):
 
     def _on_queue_declare(self, channel, queue_name, done_queue):
         log = self._get_log("_on_queue_declare")
-        log.info("start declaring queue")
+        log.info("start declaring queue %s" % queue_name)
         channel.queue_declare(callback=functools.partial(self._on_queue_declare_ok,
                                                          done_queue=done_queue),
                               queue=queue_name,
@@ -365,22 +367,22 @@ class AsyncRabbitMQ(AMQPRpcObject):
         3. create callback queue if it doesn't give
         4. create a unique `corr_id` for current call and a Queue(maxsize=1) instance. Combine them as key-value pair
         5. create channel to wait result
-        6. initialize tasks:
+        6. initialize tasks:(update: if callback queue is first given, do the following jobs. Otherwise, skip those steps )
             a. declare exchange
             b. declare queue (callback_queue)
             c. bind queue to exchange
-        7. start consuming (waiting result from service)
-        8. create a new channel to send request
-        9. send request to server
-        10. close sending channel
-        11. if timeout is set, start a coroutine when timeout
-        12. wait result from previous `Queue(maxsize=1)` (asynchronous)
-        :param exchange_name:
-        :param routing_key:
-        :param body:
-        :param callback_queue:
-        :param timeout:
-        :return:
+            d. start consuming (waiting result from service)
+        7. create a new channel to send request
+        8. send request to server
+        9. close sending channel
+        10. if timeout is set, start a coroutine when timeout
+        11. wait result from previous `Queue(maxsize=1)` (asynchronous)
+        :param exchange_name: exchange name
+        :param routing_key: routing key
+        :param body: message to be sent
+        :param callback_queue: callback queue
+        :param timeout: timeout
+        :return: None
         """
         log = self._get_log("call")
         conn = yield self._connection_pool.get()
@@ -394,13 +396,22 @@ class AsyncRabbitMQ(AMQPRpcObject):
         queue = Queue(maxsize=1)
         self._reply_queue_dict[corr_id] = queue
         channel_queue = Queue(maxsize=1)
-        conn.channel(functools.partial(self._open_channel, channel_queue=channel_queue))
-        channel = yield channel_queue.get()
-        log.info("got consume channel")
-        yield self._initialize(channel, exchange_name, callback_queue, callback_queue)
-        log.info("initialized callback queue")
-        log.info("start calling")
-        channel.basic_consume(self._client_on_message, queue=callback_queue)
+        key = "%s_%s" % (exchange_name, callback_queue,)
+        if key not in self._call_register_set:
+            self._call_channel_dict[key] = Queue(maxsize=1)
+            self._call_register_set.add(key)
+            log.info("initialize consumer channel %s" % key)
+            self._call_register_set.add(key)
+            conn.channel(functools.partial(self._open_channel, channel_queue=channel_queue))
+            channel = yield channel_queue.get()
+            log.info("got consume channel")
+            yield self._initialize(channel, exchange_name, callback_queue, callback_queue)
+            log.info("initialized callback queue")
+            channel.basic_consume(self._client_on_message, queue=callback_queue)
+            self._call_channel_dict[key].put(True)
+        verify = yield self._call_channel_dict[key].get()
+        self._call_channel_dict[key].put(verify)
+        log.info("starting waiting result")
         log.info("routing_key: %s" % routing_key)
         log.info("correlation_id: %s " % corr_id)
         log.info("reply to: %s " % callback_queue)
@@ -408,6 +419,7 @@ class AsyncRabbitMQ(AMQPRpcObject):
         conn.channel(functools.partial(self._open_channel, channel_queue=channel_queue))
         publish_channel = yield channel_queue.get()
         log.info("got publishing channel")
+        log.info("publish %s" % body)
         publish_channel.basic_publish(exchange=exchange_name,
                                       routing_key=routing_key,
                                       properties=pika.BasicProperties(correlation_id=corr_id,
@@ -432,7 +444,7 @@ class AsyncRabbitMQ(AMQPRpcObject):
             log.info("delete corr_id %s in _reply_queue." % corr_id)
             del self._reply_queue_dict[corr_id]
         else:
-            log.info("valid response")
+            log.error("invalid response: corr_id: %s" % corr_id)
             pass
 
     @coroutine

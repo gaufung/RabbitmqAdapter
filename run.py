@@ -4,7 +4,7 @@ import unittest
 import coverage
 
 COV = None
-COV = coverage.coverage(branch=True, include="test/*")
+COV = coverage.coverage(branch=True, include="./*", omit=["ENV/*", "run.py"])
 COV.start()
 
 
@@ -23,12 +23,3 @@ def _test():
 
 
 _test()
-# COV = None
-#
-# import
-#
-#
-# import unittest
-#
-# tests = unittest.TestLoader().discover("test")
-# unittest.TextTestRunner(verbosity=3).run(tests)
