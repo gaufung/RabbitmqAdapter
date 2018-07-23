@@ -18,6 +18,10 @@ class TestRemovePunctuations(unittest.TestCase):
             {
                 "input": "aispeech~dui?aios!《ba》",
                 "expect": "aispeechduiaiosba",
+            },
+            {
+                "input": str("aispeech.!"),
+                "expect": "aispeech",
             }
         ]
         for test in test_cases:
