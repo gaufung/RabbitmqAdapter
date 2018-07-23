@@ -3,6 +3,7 @@ from __future__ import unicode_literals
 import unittest
 import uuid
 import time
+import random
 from rabbitmq.rabbitmq_rpc import AsyncRabbitMQ
 from rabbitmq.rabbitmq_util import make_properties
 from tornado.gen import coroutine,Return, sleep
@@ -119,6 +120,21 @@ class TestAsyncRabbitMQCall(AsyncTestCase):
         yield self._client.wait_connected()
         yield self._client.service(self._exchange, self._queue_name, "fib.*", self.fib)
         values = [5, 10, 8, 9, 10, 23, 12]
+        got_values = yield [self._client.call(self._exchange, "fib.call", str(value), "fib_call_back_queue")
+                            for value in values]
+        for expect, actual in zip(values, got_values):
+            self.assertEqual(str(self._fib(expect)), actual)
+
+    @gen_test(timeout=60)
+    def test_call_benchmark(self):
+        yield self._client.wait_connected()
+        yield self._client.service(self._exchange, self._queue_name, "fib.*", self.fib)
+        yield self._client.service(self._exchange, self._queue_name, "fib.*", self.fib)
+        yield self._client.service(self._exchange, self._queue_name, "fib.*", self.fib)
+        # size = 4000
+        size = 5000
+        #size = 6000
+        values = [random.randint(5, 10) for _ in range(size)]
         got_values = yield [self._client.call(self._exchange, "fib.call", str(value), "fib_call_back_queue")
                             for value in values]
         for expect, actual in zip(values, got_values):

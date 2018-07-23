@@ -42,9 +42,9 @@ class TestProcessMemoryX(unittest.TestCase):
             self.res = [5, 7, 9, 11]
         # linux
         else:
-            self.a = ProcessMemoryX([0, 1, 2, 3, 4, 5])
-            self.b = ProcessMemoryX([9, 8, 7, 6, 5, 4])
-            self.res = [9, 9, 9, 9, 9, 9]
+            self.a = ProcessMemoryX([0, 1, 2, 3, 4, 5, 9])
+            self.b = ProcessMemoryX([9, 8, 7, 6, 5, 4, 0])
+            self.res = [9, 9, 9, 9, 9, 9, 9]
 
     def test_add(self):
         res = self.a + self.b
