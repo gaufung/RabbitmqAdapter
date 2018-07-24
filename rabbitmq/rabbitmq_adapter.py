@@ -3,12 +3,111 @@ from __future__ import unicode_literals
 import functools
 import logging
 import uuid
-from pika import URLParameters, ConnectionParameters
+import warnings
+import sys
+from pika import URLParameters, ConnectionParameters, BlockingConnection
 from pika import TornadoConnection
 from pika import BasicProperties
 from tornado.ioloop import Future, IOLoop
 from tornado import gen
 from tornado.queues import Queue
+
+
+class RabbitMQError(Exception):
+    def __init__(self, msg):
+        self._message = msg
+
+    def __str__(self):
+        return "RabbitMQError: %s" % self._message
+
+
+class SyncRabbitMQProducer(object):
+    """
+     synchronize amqp producer
+    usage:
+        with SyncAMQPProducer("127.0.0.1") as p:
+            p.publish("exchange_name", "dog.black", "message1", "message2")
+    """
+    def __init__(self, rabbitmq_url):
+        """
+
+        :param rabbitmq_url:
+        """
+        self._parameter = ConnectionParameters("127.0.0.1") if rabbitmq_url in ["localhost", "127.0.0.1"] else \
+            URLParameters(rabbitmq_url)
+        self._logger = logging.getLogger(__name__)
+        self._connection = None
+        self._channel = None
+
+    @property
+    def logger(self):
+        """
+        logger
+        :return:
+        """
+        return self._logger
+
+    def _connect(self):
+        self.logger.info("initialize connection and channel")
+        self._connection = BlockingConnection(self._parameter)
+        self._channel = self._connection.channel()
+
+    def _disconnect(self):
+        self.logger.info("tear down channel and connection")
+        if self._channel is not None:
+            self._channel.close()
+        if self._connection is not None:
+            self._connection.close()
+
+    def __enter__(self):
+        self._connect()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._disconnect()
+        return not isinstance(exc_val, Exception)
+
+    def publish(self, exchange, routing_key, *messages, **kwargs):
+        self.logger.info("[publishing] exchange name: %s; routing key: %s" % (exchange, routing_key,))
+        if self._channel is None:
+            raise RabbitMQError("channel has not been initialized")
+        properties = kwargs.pop("properties") if kwargs.has_key("properties") else None
+        for message in messages:
+            self.logger.info("publish message: %s" % message)
+            self._channel.basic_publish(exchange=exchange,
+                                        routing_key=routing_key,
+                                        body=str(message),
+                                        properties=properties)
+
+    def publish_messages(self, exchange, messages, **kwargs):
+        self.logger.info("[publish_message] exchange name: %s" % exchange)
+        if self._channel is None:
+            raise RabbitMQError("channel has not been initialized")
+        if not isinstance(messages, dict):
+            raise RabbitMQError("messages is not dict")
+        properties = kwargs.pop("properties") if kwargs.has_key("properties") else None
+        for routing_key, message in messages.items():
+            self.logger.info("routing key:%s, message: %s" % (routing_key, message, ))
+            self._channel.basic_publish(exchange=exchange,
+                                        routing_key=routing_key,
+                                        body=str(message),
+                                        properties=properties)
+
+    def connect(self):
+        """
+        This is method doesn't recommend. using `with` context instead
+        :return: None
+        """
+        warnings.warn("Call connect() method, using `with` context instead.", category=DeprecationWarning, stacklevel=2)
+        self._connect()
+
+    def disconnect(self):
+        """
+        This is method doesn't recommend. using `with` context instead
+        :return: None
+        """
+        warnings.warn("Call disconnect() method, using `with` context instead.", category=DeprecationWarning, stacklevel=2)
+        self._disconnect()
 
 
 class TornadoAdapter(object):
@@ -74,6 +173,7 @@ class TornadoAdapter(object):
 
         def close_callback(connection, reply_code, reply_text):
             self.logger.error("closing connection: reply code:%s, reply_text: %s" % (reply_code, reply_text,))
+            sys.exit(1)
             pass
         parameter = ConnectionParameters("127.0.0.1") if rabbitmq_url in ["localhost", "127.0.0.1"] else \
             URLParameters(rabbitmq_url)
@@ -180,7 +280,9 @@ class TornadoAdapter(object):
         try:
             result = yield handler(body)
             self.logger.info("%s has been processed successfully and result is  %s" % (body, result,))
-            if properties is not None:
+            if properties is not None \
+                    and properties.reply_to is not None \
+                    and properties.correlation_id is not None:
                 self.logger.info("sending result back to %s" % properties.reply_to)
                 self.publish(exchange=exchange,
                              routing_key=properties.reply_to,
@@ -191,21 +293,6 @@ class TornadoAdapter(object):
             unused_channel.basic_ack(basic_deliver.delivery_tag)
             import traceback
             self.logger.error(traceback.format_exc())
-
-    def _rpc_process(self, unused_channel, basic_deliver, properties, body):
-        if properties.correlation_id in self._rpc_corr_id_dict:
-            self._rpc_corr_id_dict[properties.correlation_id].set_result(body)
-
-    @gen.coroutine
-    def _initialize_rpc_callback(self, exchange):
-        self.logger.info("initialize rpc callback queue")
-        rpc_channel = yield self._create_channel(self._receive_connection)
-        yield self._exchange_declare(rpc_channel, exchange)
-        callback_queue = yield self._queue_declare(rpc_channel, auto_delete=True)
-        self.logger.info("callback queue: %s" % callback_queue)
-        yield self._queue_bind(rpc_channel, exchange=exchange, queue=callback_queue, routing_key=callback_queue)
-        rpc_channel.basic_consume(self._rpc_process, queue=callback_queue)
-        raise gen.Return(callback_queue)
 
     @gen.coroutine
     def rpc(self, exchange, routing_key, body, timeout=None):
@@ -228,10 +315,25 @@ class TornadoAdapter(object):
         callback_queue = yield self._rpc_exchange_dict[exchange].get()
         yield self._rpc_exchange_dict[exchange].put(callback_queue)
         self.logger.info("starting calling. %s" % body)
-        result = yield self._rpc(exchange, callback_queue, routing_key, body, timeout)
+        result = yield self._call(exchange, callback_queue, routing_key, body, timeout)
         raise gen.Return(result)
 
-    def _rpc(self, exchange, callback_queue, routing_key, body, timeout=None):
+    @gen.coroutine
+    def _initialize_rpc_callback(self, exchange):
+        self.logger.info("initialize rpc callback queue")
+        rpc_channel = yield self._create_channel(self._receive_connection)
+        yield self._exchange_declare(rpc_channel, exchange)
+        callback_queue = yield self._queue_declare(rpc_channel, auto_delete=True)
+        self.logger.info("callback queue: %s" % callback_queue)
+        yield self._queue_bind(rpc_channel, exchange=exchange, queue=callback_queue, routing_key=callback_queue)
+        rpc_channel.basic_consume(self._rpc_callback_process, queue=callback_queue)
+        raise gen.Return(callback_queue)
+
+    def _rpc_callback_process(self, unused_channel, basic_deliver, properties, body):
+        if properties.correlation_id in self._rpc_corr_id_dict:
+            self._rpc_corr_id_dict[properties.correlation_id].set_result(body)
+
+    def _call(self, exchange, callback_queue, routing_key, body, timeout=None):
         future = Future()
         corr_id = str(uuid.uuid1())
         self._rpc_corr_id_dict[corr_id] = future
@@ -242,7 +344,7 @@ class TornadoAdapter(object):
         def on_timeout():
             self.logger.error("timeout")
             del self._rpc_corr_id_dict[corr_id]
-            future.set_exception(Exception('timeout'))
+            future.set_exception(RabbitMQError('rpc timeout'))
 
         if timeout is not None:
             self._io_loop.add_timeout(float(timeout), on_timeout)
