@@ -111,6 +111,16 @@ class SyncRabbitMQProducer(object):
 
 
 class TornadoAdapter(object):
+    _EXIST_CODE = 1  # system exist code
+    _NORMAL_CLOSE_CODE = 200  # connection or channel closes normally
+    """
+    If channel closing is initiated by user (either directly of indirectly by closing a 
+    connection containing the channel) and closing concludes gracefully without Channel.
+    Close from the broker and without loss of connection, the callback will receive 0 as 
+    reply_code and empty string as reply_text.
+    """
+    _USER_CLOSE_CODE = 0
+
     def __init__(self, rabbitmq_url, io_loop=None):
         """
         A Rabbitmq client, using tornado to complete asynchronous invoking.
@@ -131,7 +141,8 @@ class TornadoAdapter(object):
         :param rabbitmq_url: url for rabbitmq. it can be either '127.0.0.1' ("localhost") or 'amqp://dev:aispeech2018@10.12.7.22:5672/'
         :param io_loop: io loop. if it is none, using IOLoop.current() instead.
         """
-        self._rabbitmq_url = rabbitmq_url
+        self._parameter = ConnectionParameters("127.0.0.1") if rabbitmq_url in ["localhost", "127.0.0.1"] else \
+            URLParameters(rabbitmq_url)
         self._logger = logging.getLogger(__name__)
         self._publish_connection = None
         self._receive_connection = None
@@ -142,13 +153,13 @@ class TornadoAdapter(object):
         self._io_loop = io_loop
 
     @gen.coroutine
-    def establish_connections(self):
+    def connect(self):
         """
         establishing two connections for publishing and receiving respectively.
         :return: True if establish successfully.
         """
-        self._publish_connection = yield self._create_connection(self._rabbitmq_url)
-        self._receive_connection = yield self._create_connection(self._rabbitmq_url)
+        self._publish_connection = yield self._create_connection(self._parameter)
+        self._receive_connection = yield self._create_connection(self._parameter)
         raise gen.Return(True)
 
     @property
@@ -159,7 +170,7 @@ class TornadoAdapter(object):
         """
         return self._logger
 
-    def _create_connection(self, rabbitmq_url):
+    def _create_connection(self, parameter):
         self.logger.info("creating connection")
         future = Future()
 
@@ -172,11 +183,10 @@ class TornadoAdapter(object):
             future.set_exception(exception)
 
         def close_callback(connection, reply_code, reply_text):
-            self.logger.error("closing connection: reply code:%s, reply_text: %s" % (reply_code, reply_text,))
-            sys.exit(1)
+            if reply_code not in [self._NORMAL_CLOSE_CODE, self._USER_CLOSE_CODE]:
+                self.logger.error("closing connection: reply code:%s, reply_text: %s. system will exist" % (reply_code, reply_text,))
+                sys.exit(self._EXIST_CODE)
 
-        parameter = ConnectionParameters("127.0.0.1") if rabbitmq_url in ["localhost", "127.0.0.1"] else \
-            URLParameters(rabbitmq_url)
         TornadoConnection(parameter,
                           on_open_callback=open_callback,
                           on_open_error_callback=open_error_callback,
@@ -184,19 +194,19 @@ class TornadoAdapter(object):
                           custom_ioloop=self._io_loop)
         return future
 
-    def _create_channel(self, connection, allow_close=False):
+    def _create_channel(self, connection):
         self.logger.info("creating channel")
         future = Future()
 
         def on_channel_closed(channel, reply_code, reply_txt):
-            self.logger.error("channel closed. reply code: %s; reply text: %s and system will exit"
-                              % (reply_code, reply_txt,))
-            sys.exit(1)
+            if reply_code not in [self._NORMAL_CLOSE_CODE, self._USER_CLOSE_CODE]:
+                self.logger.error("channel closed. reply code: %s; reply text: %s. system will exist"
+                                  % (reply_code, reply_txt,))
+                sys.exit(self._EXIST_CODE)
 
         def open_callback(channel):
             self.logger.info("created channel")
-            if allow_close is False:
-                channel.add_on_close_callback(on_channel_closed)
+            channel.add_on_close_callback(on_channel_closed)
             future.set_result(channel)
 
         connection.channel(on_open_callback=open_callback)
@@ -248,7 +258,7 @@ class TornadoAdapter(object):
         :return: None
         """
         self.logger.info("[publishing] exchange: %s; routing key: %s; body: %s." % (exchange, routing_key, body,))
-        channel = yield self._create_channel(self._publish_connection, allow_close=True)
+        channel = yield self._create_channel(self._publish_connection)
         channel.basic_publish(exchange=exchange, routing_key=routing_key, body=body, properties=properties)
         channel.close()
 
@@ -281,7 +291,7 @@ class TornadoAdapter(object):
     def _on_message(self, unused_channel, basic_deliver, properties, body, exchange, handler=None):
         self.logger.info("consuming message: %s" % body)
         self._io_loop.spawn_callback(self._process_message, unused_channel, basic_deliver, properties, body,
-                                    exchange, handler)
+                                     exchange, handler)
 
     @gen.coroutine
     def _process_message(self, unused_channel, basic_deliver, properties, body, exchange, handler=None):
@@ -357,3 +367,9 @@ class TornadoAdapter(object):
         if timeout is not None:
             self._io_loop.add_timeout(float(timeout), on_timeout)
         return future
+
+    def close(self):
+        if self._publish_connection is not None and self._publish_connection.is_open:
+            self._publish_connection.close()
+        if self._receive_connection is not None and self._receive_connection.is_open:
+            self._receive_connection.close()

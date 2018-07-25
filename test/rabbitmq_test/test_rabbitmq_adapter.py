@@ -5,7 +5,7 @@ import functools
 import uuid
 import random
 from rabbitmq.rabbitmq_adapter import TornadoAdapter, RabbitMQError, SyncRabbitMQProducer
-from tornado.gen import coroutine, Return
+from tornado.gen import coroutine, Return, sleep
 from tornado.testing import AsyncTestCase, gen_test
 from tornado.queues import Queue
 from rabbitmq.rabbitmq_util import make_properties
@@ -24,6 +24,10 @@ class TestTornadoAdapterPublish(AsyncTestCase):
         self.routing_key = "adapter.*"
         self.queue = "adapter_queue"
 
+    def tearDown(self):
+        self._adapter.close()
+        super(TestTornadoAdapterPublish, self).tearDown()
+
     @coroutine
     def _process(self, body, back_value):
         self._result_queue.put(body)
@@ -31,7 +35,7 @@ class TestTornadoAdapterPublish(AsyncTestCase):
 
     @gen_test(timeout=5)
     def test_publish(self):
-        success = yield self._adapter.establish_connections()
+        success = yield self._adapter.connect()
         self.assertTrue(success)
         expect_body = 'Hello World!'
         yield self._adapter.receive(self.exchange, self.routing_key, self.queue,
@@ -42,7 +46,7 @@ class TestTornadoAdapterPublish(AsyncTestCase):
 
     @gen_test(timeout=5)
     def test_publish_with_reply(self):
-        success = yield self._adapter.establish_connections()
+        success = yield self._adapter.connect()
         self.assertTrue(success)
         corr_id = str(uuid.uuid4())
         reply_to = "queue_reply_to"
@@ -81,7 +85,7 @@ class TestTornadoAdapterRpc(AsyncTestCase):
 
     @gen_test(timeout=10)
     def test_rpc_call(self):
-        success = yield self._adapter.establish_connections()
+        success = yield self._adapter.connect()
         self.assertTrue(success)
         yield self._adapter.receive(self._exchange, self._routing_key, self._queue, self.fib)
         value = yield self._adapter.rpc(self._exchange,"fib.call", "10")
@@ -89,7 +93,7 @@ class TestTornadoAdapterRpc(AsyncTestCase):
 
     @gen_test(timeout=20)
     def test_rpc_calls(self):
-        success = yield self._adapter.establish_connections()
+        success = yield self._adapter.connect()
         self.assertTrue(success)
         yield self._adapter.receive(self._exchange, self._routing_key, self._queue, self.fib)
         size = 2000
@@ -103,11 +107,15 @@ class TestTornadoAdapterRpc(AsyncTestCase):
 
     @gen_test(timeout=10)
     def test_rpc_timeout(self):
-        success = yield self._adapter.establish_connections()
+        success = yield self._adapter.connect()
         self.assertTrue(success)
         yield self._adapter.receive(self._exchange, self._routing_key, self._queue, self.fib)
         with self.assertRaises(RabbitMQError):
             yield self._adapter.rpc(self._exchange, "fib.50", "50", 3)
+
+    def tearDown(self):
+        self._adapter.close()
+        super(TestTornadoAdapterRpc, self).tearDown()
 
 
 class TestSyncRabbitMQProducer(AsyncTestCase):
@@ -138,7 +146,7 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
 
     @gen_test(timeout=10)
     def test_publish_single(self):
-        success = yield self._adapter.establish_connections()
+        success = yield self._adapter.connect()
         self.assertTrue(success)
         yield self._adapter.receive(self.exchange, self.routing_key, self.queue,
                                     functools.partial(self._process, back_value=True))
@@ -150,7 +158,7 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
 
     @gen_test(timeout=10)
     def test_publish_multi(self):
-        success = yield self._adapter.establish_connections()
+        success = yield self._adapter.connect()
         self.assertTrue(success)
         yield self._adapter.receive(self.exchange, self.routing_key, self.queue,
                                     functools.partial(self._process, back_value=True))
@@ -171,7 +179,7 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
 
     @gen_test(timeout=10)
     def test_publish_reply_with(self):
-        success = yield self._adapter.establish_connections()
+        success = yield self._adapter.connect()
         self.assertTrue(success)
         corrid = str(uuid.uuid4())
         reply_to = "async_reply_to"
