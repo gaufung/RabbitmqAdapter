@@ -132,6 +132,7 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
             p.publish(self.exchange, "sync.dog", "nice to meet you")
         with self.assertRaises(RabbitMQError):
             p.publish_messages(self.exchange, {'sync.cat':"A cat","sync.dog":"A dog"})
+        p.connect()
         with self.assertRaises(RabbitMQError):
             p.publish_messages(self.exchange, ["sync.cat", "A cat"])
 
@@ -166,6 +167,7 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
         for i in range(2):
             value = yield self._result_queue.get()
             self.assertTrue(value in result_set)
+        p.disconnect()
 
     @gen_test(timeout=10)
     def test_publish_reply_with(self):

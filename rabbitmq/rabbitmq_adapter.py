@@ -174,7 +174,7 @@ class TornadoAdapter(object):
         def close_callback(connection, reply_code, reply_text):
             self.logger.error("closing connection: reply code:%s, reply_text: %s" % (reply_code, reply_text,))
             sys.exit(1)
-            pass
+
         parameter = ConnectionParameters("127.0.0.1") if rabbitmq_url in ["localhost", "127.0.0.1"] else \
             URLParameters(rabbitmq_url)
         TornadoConnection(parameter,
@@ -274,6 +274,7 @@ class TornadoAdapter(object):
         yield self._queue_bind(channel, exchange=exchange, queue=queue_name, routing_key=routing_key)
         self.logger.info("[start consuming] exchange: %s; routing key: %s; queue name: %s" % (exchange,
                                                                                               routing_key, queue_name,))
+        channel.basic_qos(prefetch_count=prefetch_count)
         channel.basic_consume(functools.partial(self._on_message, exchange=exchange, handler=handler)
                               , queue=queue_name, no_ack=no_ack)
 
