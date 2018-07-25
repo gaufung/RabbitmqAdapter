@@ -23,7 +23,7 @@ class RabbitMQError(Exception):
 
 class SyncRabbitMQProducer(object):
     """
-     synchronize amqp producer
+    synchronize amqp producer
     usage:
         with SyncAMQPProducer("127.0.0.1") as p:
             p.publish("exchange_name", "dog.black", "message1", "message2")
@@ -174,7 +174,7 @@ class TornadoAdapter(object):
         def close_callback(connection, reply_code, reply_text):
             self.logger.error("closing connection: reply code:%s, reply_text: %s" % (reply_code, reply_text,))
             sys.exit(1)
-            pass
+
         parameter = ConnectionParameters("127.0.0.1") if rabbitmq_url in ["localhost", "127.0.0.1"] else \
             URLParameters(rabbitmq_url)
         TornadoConnection(parameter,
@@ -184,12 +184,19 @@ class TornadoAdapter(object):
                           custom_ioloop=self._io_loop)
         return future
 
-    def _create_channel(self, connection):
+    def _create_channel(self, connection, allow_close=False):
         self.logger.info("creating channel")
         future = Future()
 
+        def on_channel_closed(channel, reply_code, reply_txt):
+            self.logger.error("channel closed. reply code: %s; reply text: %s and system will exit"
+                              % (reply_code, reply_txt,))
+            sys.exit(1)
+
         def open_callback(channel):
             self.logger.info("created channel")
+            if allow_close is False:
+                channel.add_on_close_callback(on_channel_closed)
             future.set_result(channel)
 
         connection.channel(on_open_callback=open_callback)
@@ -241,7 +248,7 @@ class TornadoAdapter(object):
         :return: None
         """
         self.logger.info("[publishing] exchange: %s; routing key: %s; body: %s." % (exchange, routing_key, body,))
-        channel = yield self._create_channel(self._publish_connection)
+        channel = yield self._create_channel(self._publish_connection, allow_close=True)
         channel.basic_publish(exchange=exchange, routing_key=routing_key, body=body, properties=properties)
         channel.close()
 
@@ -267,6 +274,7 @@ class TornadoAdapter(object):
         yield self._queue_bind(channel, exchange=exchange, queue=queue_name, routing_key=routing_key)
         self.logger.info("[start consuming] exchange: %s; routing key: %s; queue name: %s" % (exchange,
                                                                                               routing_key, queue_name,))
+        channel.basic_qos(prefetch_count=prefetch_count)
         channel.basic_consume(functools.partial(self._on_message, exchange=exchange, handler=handler)
                               , queue=queue_name, no_ack=no_ack)
 
