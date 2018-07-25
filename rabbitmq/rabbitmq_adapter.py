@@ -183,7 +183,7 @@ class TornadoAdapter(object):
             future.set_exception(exception)
 
         def close_callback(connection, reply_code, reply_text):
-            if reply_code not in [self._NORMAL_CLOSE_CODE, self._USER_CLOSE_CODE]:
+            if reply_code not in [self._NORMAL_CLOSE_CODE,]:
                 self.logger.error("closing connection: reply code:%s, reply_text: %s. system will exist" % (reply_code, reply_text,))
                 sys.exit(self._EXIST_CODE)
 
