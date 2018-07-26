@@ -44,7 +44,7 @@ class ProcessCpuTimesX(ProcessCpuTimes):
         values = [getattr(self, key) + getattr(other, key) for key in self._fields]
         return ProcessCpuTimesX(values)
 
-    def __radd__(self, other):
+    def __iadd__(self, other):
         values = [getattr(self, key) + getattr(other, key) for key in self._fields]
         self = ProcessCpuTimesX(values)
         return self
@@ -66,7 +66,7 @@ class ProcessMemoryX(ProcessMemory):
         values = [getattr(self, key) + getattr(other, key) for key in self._fields]
         return ProcessMemoryX(values)
 
-    def __radd__(self, other):
+    def __iadd__(self, other):
         values = [getattr(self, key) + getattr(other, key) for key in self._fields]
         self = ProcessMemoryX(values)
         return self

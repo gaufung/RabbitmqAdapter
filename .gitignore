@@ -11,3 +11,4 @@ virtualenv/
 
 # coverage
 tmp/
+app/

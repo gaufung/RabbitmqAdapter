@@ -25,12 +25,20 @@ class TestProcessCpuTimesX(unittest.TestCase):
         self.assertEquals(res.children_user, 9)
         self.assertEquals(res.children_system, 18)
 
-    def test_radd(self):
+    def test_iadd(self):
         self.a += self.b
         self.assertEquals(self.a.user, 3)
         self.assertEquals(self.a.system, 10)
         self.assertEquals(self.a.children_user, 9)
         self.assertEquals(self.a.children_system, 18)
+
+    def test_average(self):
+        av = self.a.average(None)
+        self.assertEqual(0, av)
+        self.a += self.b
+        av = self.a.average(10)
+        expect = float(self.a.user + self.a.system) / 10 * 100
+        self.assertEqual(av, expect)
 
 
 class TestProcessMemoryX(unittest.TestCase):
@@ -42,9 +50,9 @@ class TestProcessMemoryX(unittest.TestCase):
             self.res = [5, 7, 9, 11]
         # linux
         else:
-            self.a = ProcessMemoryX([0, 1, 2, 3, 4, 5])
-            self.b = ProcessMemoryX([9, 8, 7, 6, 5, 4])
-            self.res = [9, 9, 9, 9, 9, 9]
+            self.a = ProcessMemoryX([0, 1, 2, 3, 4, 5, 9])
+            self.b = ProcessMemoryX([9, 8, 7, 6, 5, 4, 0])
+            self.res = [9, 9, 9, 9, 9, 9, 9]
 
     def test_add(self):
         res = self.a + self.b
