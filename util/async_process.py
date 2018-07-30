@@ -2,6 +2,7 @@
 import os
 import logging
 import signal
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from tornado.process import Subprocess
 from tornado.gen import Task
 from tornado import gen
@@ -125,3 +126,28 @@ class AsyncProcess(object):
                 self.logger.error("%s exit code is %d" % (self._process_name, self._exit_code))
             else:
                 raise Exception("%s exit code is %d" % (self._process_name, self._exit_code))
+
+class AsyncProcessPool(object):
+    def __init__(self, pool_size):
+        self._pool = ProcessPoolExecutor(max_workers=pool_size)
+
+    @gen.coroutine
+    def submit(self, fn, *args, **kwargs):
+        yield self._pool.submit(fn, *args, **kwargs)
+        raise gen.Return(None)
+
+    def shutdown(self, wait=True):
+        self._pool.shutdown(wait)
+
+
+class AsyncThreadPool(object):
+    def __init__(self, pool_size):
+        self._pool = ThreadPoolExecutor(pool_size)
+
+    @gen.coroutine
+    def submit(self, fn, *args, **kwargs):
+        value = yield self._pool.submit(fn, *args, **kwargs)
+        raise gen.Return(value)
+
+    def shutdown(self, wait=True):
+        self._pool.shutdown(wait)
