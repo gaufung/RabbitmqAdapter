@@ -257,7 +257,7 @@ class TornadoAdapter(object):
         :param properties: properties
         :return: None
         """
-        self.logger.info("[publishing] exchange: %s; routing key: %s; body: %s." % (exchange, routing_key, body,))
+        # self.logger.info("[publishing] exchange: %s; routing key: %s; body: %s." % (exchange, routing_key, body,))
         channel = yield self._create_channel(self._publish_connection)
         channel.basic_publish(exchange=exchange, routing_key=routing_key, body=body, properties=properties)
         channel.close()
@@ -326,7 +326,7 @@ class TornadoAdapter(object):
         :param timeout: timeout
         :return: result or Exception("timeout")
         """
-        self.logger.info("rpc call. exchange: %s; routing_key: %s; body: %s" % (exchange, routing_key, body,))
+        # self.logger.info("rpc call. exchange: %s; routing_key: %s; body: %s" % (exchange, routing_key, body,))
         if exchange not in self._rpc_exchange_dict:
             self._rpc_exchange_dict[exchange] = Queue(maxsize=1)
             callback_queue = yield self._initialize_rpc_callback(exchange)
