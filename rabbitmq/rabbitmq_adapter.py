@@ -280,7 +280,7 @@ class TornadoAdapter(object):
         self.logger.info("[receive] exchange: %s; routing key: %s; queue name: %s" % (exchange, routing_key, queue_name,))
         channel = yield self._create_channel(self._publish_connection)
         yield self._exchange_declare(channel, exchange=exchange)
-        yield self._queue_declare(channel, queue=queue_name, auto_delete=True)
+        yield self._queue_declare(channel, queue=queue_name, auto_delete=False)
         yield self._queue_bind(channel, exchange=exchange, queue=queue_name, routing_key=routing_key)
         self.logger.info("[start consuming] exchange: %s; routing key: %s; queue name: %s" % (exchange,
                                                                                               routing_key, queue_name,))
