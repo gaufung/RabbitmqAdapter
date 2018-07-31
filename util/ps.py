@@ -168,14 +168,14 @@ class SystemResourceThread(threading.Thread):
     """
     worker for system resource monitor
     """
-    def __init__(self, res, interval_time=5, clear_interval=10000):
-        threading.Thread.__init__(self)
-        self._sys_res = res
+    def __init__(self, interval_time=5, clear_interval=10000):
+        super(SystemResourceThread, self).__init__()
+        self._sys_res = SystemResource()
         self._interval_time = interval_time
         self._flag = True
         self._clear_interval = clear_interval
 
-    def terminate(self):
+    def _terminate(self):
         self._flag = False
 
     def run(self):
@@ -187,19 +187,14 @@ class SystemResourceThread(threading.Thread):
                 self._sys_res.clear_expired_snapshot()
             time.sleep(self._interval_time)
 
+    @property
+    def resource(self):
+        return self._sys_res
 
-system_resource_monitor = SystemResourceThread(SystemResource(), 1)
+    def start(self):
+        super(SystemResourceThread, self).start()
 
-
-def monitor():
-    """
-    Start monitor
-    :return:
-    """
-    system_resource_monitor.start()
-
-    def on_terminate():
-        system_resource_monitor.terminate()
-        system_resource_monitor.join()
-    signal.signal(signal.SIGTERM, on_terminate)
-
+        def on_terminate():
+            self._terminate()
+            self.join()
+        signal.signal(signal.SIGTERM, on_terminate)

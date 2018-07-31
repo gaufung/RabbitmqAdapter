@@ -4,7 +4,7 @@ import unittest
 import coverage
 
 COV = None
-COV = coverage.coverage(branch=True, include="./*", omit=["ENV/*", "run.py", "test/*", "pep8/*", "*/__init__.py"])
+COV = coverage.coverage(branch=True, include="./*", omit=["ENV/*", "_run.py", "test/*", "pep8/*", "*/__init__.py"])
 COV.start()
 
 

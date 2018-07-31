@@ -17,7 +17,7 @@ deps:
 
 cov:
 	$(shell source ENV/bin/activate)
-	$(PYTHONCMD) run.py
+	$(PYTHONCMD) _run.py
 	
 push:
 	git checkout master

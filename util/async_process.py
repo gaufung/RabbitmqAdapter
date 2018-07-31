@@ -2,20 +2,25 @@
 import os
 import logging
 import signal
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from tornado.process import Subprocess
 from tornado.gen import Task
 from tornado import gen
 from tornado.ioloop import IOLoop
 from tornado.iostream import StreamClosedError
-"""
-Asynchronous process call
-"""
 
 
 class AsyncProcess(object):
-    @classmethod
-    def _get_log(cls, *name):
-        return logging.getLogger('.'.join((cls.__module__, cls.__name__) + name))
+    """
+    Asynchronous Process using `tornado.process.Subprocess`. More details see `tornado.process.Subprocess`.
+    Usage:
+    If shell command is like that: `bash run.sh 10 file-names`, you can use it like this.
+    ```
+    ap = AsyncProcess(['bash', 'run.sh', '10', 'file-names'])
+    ap.invokes()
+    ```
+    More usage cases, please lookup `test/util_test/test_async_process.py` file.
+    """
 
     def __init__(self, args, cwd=None, timeout=None, is_logging=True,
                  io_loop=None):
@@ -24,7 +29,7 @@ class AsyncProcess(object):
         :param args: args should be a sequence of program arguments or else a single string
         :type args: list[unix-like system]. e.g. ['/bin/vikings', '-input', 'eggs.txt', '-output', 'spam spam.txt', '-cmd', "echo '$MONEY'"]
         :param cwd: current work directory
-        :param timeout: timeout for process (second)
+        :param timeout: timeout for process (metric: second)
         :param is_logging: whether logging when executing process
         :param io_loop: io loop. if it is None, using IOLoop.current()
         """
@@ -39,20 +44,24 @@ class AsyncProcess(object):
         self._process_name = args[0]
         self._process = None
         self._timeout_cancel = None
+        self._logger = logging.getLogger(__name__)
+
+    @property
+    def logger(self):
+        return self._logger
 
     def _timeout_callback(self):
         """
         if timeout, it will be invoked
         :return: None
         """
-        log = self._get_log("_timeout_callback")
         if self._process is not None:
-            log.info("subprocess: %s will be killed as timeout" % (self._process_name,))
+            self.logger.info("subprocess: %s will be killed as timeout" % (self._process_name,))
             self._timeout_cancel = None
             os.kill(self._process.pid, signal.SIGKILL)
-            log.info("subprocess: %s is killed by system signal" % (self._process_name,))
+            self.logger.info("subprocess: %s is killed by system signal" % (self._process_name,))
         else:
-            log.error("%s. no such process" % (self._process_name,))
+            self.logger.error("%s. no such process" % (self._process_name,))
 
     def _exit_callback(self, exit_code):
         """
@@ -70,8 +79,7 @@ class AsyncProcess(object):
         :param is_error: either stdout or stderr. default is stdout
         :return: None
         """
-        log = self._get_log("_read_log_from_stream")
-        log_handler = log.error if is_error else log.info
+        log_handler = self.logger.error if is_error else self.logger.info
         try:
             while True:
                 line = yield stream.read_until("\n")
@@ -87,7 +95,6 @@ class AsyncProcess(object):
         :param kwargs: key value arguments for process.
         :return: None
         """
-        log = self._get_log("invoke")
         if self._is_logging:
             self._process = Subprocess(self._args, cwd=self._cwd, stdout=Subprocess.STREAM,
                                        stderr=Subprocess.STREAM, **kwargs)
@@ -96,42 +103,52 @@ class AsyncProcess(object):
 
         self._process.set_exit_callback(self._exit_callback)
         if self._timeout is not None:
-            log.info("invoke timeout")
+            self.logger.info("invoke timeout")
             self._timeout_cancel = self._io_loop.call_later(self._timeout, self._timeout_callback)
 
         if self._is_logging:
-            log.info("add process stdout and stderr into logging")
+            self.logger.info("add process stdout and stderr into logging")
             yield [
                 Task(self._read_log_from_stream, self._process.stdout),
                 Task(self._read_log_from_stream, self._process.stderr, True)
             ]
         if self._timeout_cancel is not None:
-            log.info("remove timeout")
+            self.logger.info("remove timeout")
             self._io_loop.remove_timeout(self._timeout_cancel)
             self._timeout_cancel = None
         else:
             if self._timeout is not None:
                 raise Exception("%s subprocess timeout" % (self._process_name,))
         if self._exit_code is None:
-            log.error("%s exit code is None" % (self._process_name,))
+            self.logger.error("%s exit code is None" % (self._process_name,))
         if self._exit_code is not None and self._exit_code != 0:
             if self._exit_code == 2:
-                log.error("%s exit code is %d" % (self._process_name, self._exit_code))
+                self.logger.error("%s exit code is %d" % (self._process_name, self._exit_code))
             else:
                 raise Exception("%s exit code is %d" % (self._process_name, self._exit_code))
 
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    _args = ["ls"]
-    _io_loop = IOLoop.current()
-    async_process = AsyncProcess(_args, cwd=None, timeout=None, is_logging=True, io_loop=_io_loop)
-    async_process.invoke()
-    IOLoop().current().start()
+class AsyncProcessPool(object):
+    def __init__(self, pool_size):
+        self._pool = ProcessPoolExecutor(max_workers=pool_size)
+
+    @gen.coroutine
+    def submit(self, fn, *args, **kwargs):
+        yield self._pool.submit(fn, *args, **kwargs)
+        raise gen.Return(None)
+
+    def shutdown(self, wait=True):
+        self._pool.shutdown(wait)
 
 
+class AsyncThreadPool(object):
+    def __init__(self, pool_size):
+        self._pool = ThreadPoolExecutor(pool_size)
 
+    @gen.coroutine
+    def submit(self, fn, *args, **kwargs):
+        value = yield self._pool.submit(fn, *args, **kwargs)
+        raise gen.Return(value)
 
-
-
-
+    def shutdown(self, wait=True):
+        self._pool.shutdown(wait)

@@ -3,7 +3,8 @@
 """
 import unittest
 import sys
-from util.ps import ProcessCpuTimesX, ProcessMemoryX, SystemResource, Resource
+import time
+from util.ps import ProcessCpuTimesX, ProcessMemoryX, SystemResource, Resource, SystemResourceThread
 
 
 class TestProcessCpuTimesX(unittest.TestCase):
@@ -88,6 +89,21 @@ class TestSystemResource(unittest.TestCase):
         sr.set_sample("first")
         r2 = sr.get_sample("first")
         self.assertTupleEqual(Resource(0, 0, 0, 0), r2)
+
+
+class TestSystemResourceThread(unittest.TestCase):
+    def setUp(self):
+        self.t = SystemResourceThread(1)
+        self.t.start()
+
+    def test_monitor(self):
+        self.t.resource.set_sample("milestone")
+        time.sleep(2)
+        value = self.t.resource.get_sample("milestone")
+        print(value)
+
+    def tearDown(self):
+        self.t._terminate()
 
 
 if __name__ == "__main__":
