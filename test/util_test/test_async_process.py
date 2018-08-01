@@ -4,7 +4,6 @@ import unittest
 import os
 import time
 from tornado.testing import gen_test, AsyncTestCase
-from tornado.gen import coroutine
 from util.async_process import AsyncProcess, AsyncProcessPool, AsyncThreadPool
 
 _base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -71,6 +70,7 @@ class TestAsyncProcessPool(AsyncTestCase):
     def setUp(self):
         super(TestAsyncProcessPool, self).setUp()
         self.app = AsyncProcessPool(3)
+        self._bash_file = _base_dir + "/test_bash.sh"
 
     @gen_test(timeout=10)
     def test_fib(self):
@@ -96,7 +96,7 @@ class TestAsyncThreadPool(AsyncTestCase):
     @gen_test
     def test_fib_expect(self):
         with self.assertRaises(Exception):
-            yield self.app.submit(fib_except, )
+            yield self.atp.submit(fib_except, )
 
 
 if __name__ == "__main__":

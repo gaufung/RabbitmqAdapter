@@ -174,6 +174,7 @@ class SystemResourceThread(threading.Thread):
         self._interval_time = interval_time
         self._flag = True
         self._clear_interval = clear_interval
+        self._stop_event = threading.Event()
 
     def _terminate(self):
         self._flag = False
