@@ -257,7 +257,7 @@ class TornadoAdapter(object):
         :param properties: properties
         :return: None
         """
-        self.logger.info("[publishing] exchange: %s; routing key: %s; body: %s." % (exchange, routing_key, body,))
+        # self.logger.info("[publishing] exchange: %s; routing key: %s; body: %s." % (exchange, routing_key, body,))
         channel = yield self._create_channel(self._publish_connection)
         channel.basic_publish(exchange=exchange, routing_key=routing_key, body=body, properties=properties)
         channel.close()
@@ -279,9 +279,10 @@ class TornadoAdapter(object):
         """
         self.logger.info("[receive] exchange: %s; routing key: %s; queue name: %s" % (exchange, routing_key, queue_name,))
         channel = yield self._create_channel(self._publish_connection)
-        yield self._exchange_declare(channel, exchange=exchange)
         yield self._queue_declare(channel, queue=queue_name, auto_delete=False)
-        yield self._queue_bind(channel, exchange=exchange, queue=queue_name, routing_key=routing_key)
+        if routing_key != "":
+            yield self._exchange_declare(channel, exchange=exchange)
+            yield self._queue_bind(channel, exchange=exchange, queue=queue_name, routing_key=routing_key)
         self.logger.info("[start consuming] exchange: %s; routing key: %s; queue name: %s" % (exchange,
                                                                                               routing_key, queue_name,))
         channel.basic_qos(prefetch_count=prefetch_count)
@@ -325,7 +326,7 @@ class TornadoAdapter(object):
         :param timeout: timeout
         :return: result or Exception("timeout")
         """
-        self.logger.info("rpc call. exchange: %s; routing_key: %s; body: %s" % (exchange, routing_key, body,))
+        # self.logger.info("rpc call. exchange: %s; routing_key: %s; body: %s" % (exchange, routing_key, body,))
         if exchange not in self._rpc_exchange_dict:
             self._rpc_exchange_dict[exchange] = Queue(maxsize=1)
             callback_queue = yield self._initialize_rpc_callback(exchange)
@@ -340,10 +341,11 @@ class TornadoAdapter(object):
     def _initialize_rpc_callback(self, exchange):
         self.logger.info("initialize rpc callback queue")
         rpc_channel = yield self._create_channel(self._receive_connection)
-        yield self._exchange_declare(rpc_channel, exchange)
         callback_queue = yield self._queue_declare(rpc_channel, auto_delete=True)
         self.logger.info("callback queue: %s" % callback_queue)
-        yield self._queue_bind(rpc_channel, exchange=exchange, queue=callback_queue, routing_key=callback_queue)
+        if exchange != "":
+            yield self._exchange_declare(rpc_channel, exchange)
+            yield self._queue_bind(rpc_channel, exchange=exchange, queue=callback_queue, routing_key=callback_queue)
         rpc_channel.basic_consume(self._rpc_callback_process, queue=callback_queue)
         raise gen.Return(callback_queue)
 
