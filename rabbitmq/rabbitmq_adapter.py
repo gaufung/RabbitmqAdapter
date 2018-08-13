@@ -8,7 +8,8 @@ import sys
 from pika import URLParameters, ConnectionParameters, BlockingConnection
 from pika import TornadoConnection
 from pika import BasicProperties
-from tornado.ioloop import Future, IOLoop
+from tornado.ioloop import IOLoop
+from tornado.concurrent import Future
 from tornado import gen
 from tornado.queues import Queue
 
