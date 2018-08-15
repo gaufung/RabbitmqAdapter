@@ -8,7 +8,8 @@ import sys
 from pika import URLParameters, ConnectionParameters, BlockingConnection
 from pika import TornadoConnection
 from pika import BasicProperties
-from tornado.ioloop import Future, IOLoop
+from tornado.ioloop import IOLoop
+from tornado.concurrent import Future
 from tornado import gen
 from tornado.queues import Queue
 
@@ -257,7 +258,7 @@ class TornadoAdapter(object):
         :param properties: properties
         :return: None
         """
-        # self.logger.info("[publishing] exchange: %s; routing key: %s; body: %s." % (exchange, routing_key, body,))
+        self.logger.info("preparing to publish. exchange: %s; routing_key: %s" % (exchange, routing_key,))
         channel = yield self._create_channel(self._publish_connection)
         channel.basic_publish(exchange=exchange, routing_key=routing_key, body=body, properties=properties)
         channel.close()
@@ -290,7 +291,7 @@ class TornadoAdapter(object):
                               , queue=queue_name, no_ack=no_ack)
 
     def _on_message(self, unused_channel, basic_deliver, properties, body, exchange, handler=None):
-        self.logger.info("consuming message: %s" % body)
+        self.logger.info("consuming message")
         self._io_loop.spawn_callback(self._process_message, unused_channel, basic_deliver, properties, body,
                                      exchange, handler)
 
@@ -298,7 +299,7 @@ class TornadoAdapter(object):
     def _process_message(self, unused_channel, basic_deliver, properties, body, exchange, handler=None):
         try:
             result = yield handler(body)
-            self.logger.info("%s has been processed successfully and result is  %s" % (body, result,))
+            self.logger.info("message has been processed successfully")
             if properties is not None \
                     and properties.reply_to is not None \
                     and properties.correlation_id is not None:
@@ -326,14 +327,14 @@ class TornadoAdapter(object):
         :param timeout: timeout
         :return: result or Exception("timeout")
         """
-        # self.logger.info("rpc call. exchange: %s; routing_key: %s; body: %s" % (exchange, routing_key, body,))
+        self.logger.info("preparing to rpc call. exchange: %s; routing key: %s" % (exchange, routing_key, ))
         if exchange not in self._rpc_exchange_dict:
             self._rpc_exchange_dict[exchange] = Queue(maxsize=1)
             callback_queue = yield self._initialize_rpc_callback(exchange)
             yield self._rpc_exchange_dict[exchange].put(callback_queue)
         callback_queue = yield self._rpc_exchange_dict[exchange].get()
         yield self._rpc_exchange_dict[exchange].put(callback_queue)
-        self.logger.info("starting calling. %s" % body)
+        self.logger.info("starting call ")
         result = yield self._call(exchange, callback_queue, routing_key, body, timeout)
         raise gen.Return(result)
 
