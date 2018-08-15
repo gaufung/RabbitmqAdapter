@@ -1,95 +1,95 @@
 # -*- encoding:utf-8 -*-
 from __future__ import unicode_literals
 import unittest
-import train.errors
-from train.errors import *
+import errors
+
 
 
 class TestASError(unittest.TestCase):
     def test_ASError(self):
         test_cases = [
             {
-                "error":ASArgFormatError("as_arg_format_error"),
+                "error": errors.ASArgFormatError("as_arg_format_error"),
                 "message" : "as_arg_format_error",
-                "code" : train.errors._ARG_FORMAT,
+                "code" : errors._ARG_FORMAT,
                 "status_code": 400,
             },
             {
-                "error": ASAlreadyExistError("as_already_exist_error"),
+                "error": errors.ASAlreadyExistError("as_already_exist_error"),
                 "message": "as_already_exist_error",
-                "code": train.errors._ALREADY_EXIST,
+                "code": errors._ALREADY_EXIST,
                 "status_code": 400,
             },
             {
-                "error": ASNotExistError("as_not_exist_error"),
+                "error": errors.ASNotExistError("as_not_exist_error"),
                 "message": "as_not_exist_error",
-                "code": train.errors._NOT_EXIST,
+                "code": errors._NOT_EXIST,
                 "status_code": 400,
             },
             {
-                "error": ASNotReadyError("as_not_ready_error"),
+                "error": errors.ASNotReadyError("as_not_ready_error"),
                 "message": "as_not_ready_error",
-                "code": train.errors._NOT_READY,
+                "code": errors._NOT_READY,
                 "status_code": 500,
             },
             {
-                "error": ASNotLoginError("as_not_login_error"),
+                "error": errors.ASNotLoginError("as_not_login_error"),
                 "message": "as_not_login_error",
-                "code": train.errors._NOT_LOGIN,
+                "code": errors._NOT_LOGIN,
                 "status_code": 400,
             },
             {
-                "error": ASOwnerMismatchError("as_owner_mismatch_error"),
+                "error": errors.ASOwnerMismatchError("as_owner_mismatch_error"),
                 "message": "as_owner_mismatch_error",
-                "code": train.errors._OWNER_MISMATCH,
+                "code": errors._OWNER_MISMATCH,
                 "status_code": 400,
             },
             {
-                "error": ASEmptySetError("as_empty_set_error"),
+                "error": errors.ASEmptySetError("as_empty_set_error"),
                 "message": "as_empty_set_error",
-                "code": train.errors._EMPTY_SET,
+                "code": errors._EMPTY_SET,
                 "status_code": 400,
             },
             {
-                "error": ASNotSupportError("as_not_support_error"),
+                "error": errors.ASNotSupportError("as_not_support_error"),
                 "message": "as_not_support_error",
-                "code": train.errors._NOT_SUPPORT,
+                "code": errors._NOT_SUPPORT,
                 "status_code": 400,
             },
             {
-                "error": ASServerBusyError("as_server_busy_error"),
+                "error": errors.ASServerBusyError("as_server_busy_error"),
                 "message": "as_server_busy_error",
-                "code": train.errors._SERVER_BUSY,
+                "code": errors._SERVER_BUSY,
                 "status_code": 500,
             },
             {
-                "error": ASOperationForbiddenError("as_operation_forbidden_error"),
+                "error": errors.ASOperationForbiddenError("as_operation_forbidden_error"),
                 "message": "as_operation_forbidden_error",
-                "code": train.errors._OPERATION_FORBIDDEN,
+                "code": errors._OPERATION_FORBIDDEN,
                 "status_code": 400,
             },
             {
-                "error": ASPermissionDeniedError("as_permission_denied_error"),
+                "error": errors.ASPermissionDeniedError("as_permission_denied_error"),
                 "message": "as_permission_denied_error",
-                "code": train.errors._PERMISSION_DENIED,
+                "code": errors._PERMISSION_DENIED,
                 "status_code": 400,
             },
             {
-                "error": ASArgExpiredError("as_arg_expired_error"),
+                "error": errors.ASArgExpiredError("as_arg_expired_error"),
                 "message": "as_arg_expired_error",
-                "code": train.errors._ARG_EXPIRED,
+                "code": errors._ARG_EXPIRED,
                 "status_code": 400,
             },
             {
-                "error": ASResourceBusyError("as_resource_busy_error"),
+                "error": errors.ASResourceBusyError("as_resource_busy_error"),
                 "message": "as_resource_busy_error",
-                "code": train.errors._RESOURCE_BUSY,
+                "code": errors._RESOURCE_BUSY,
                 "status_code": 500,
             },
             {
-                "error": ASSysError("as_sys_error"),
+                "error": errors.ASSysError("as_sys_error"),
                 "message": "as_sys_error",
-                "code": train.errors._SYS,
+                "code": errors._SYS,
                 "status_code": 500,
             },
         ]

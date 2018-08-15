@@ -6,7 +6,8 @@ import functools
 from rabbitmq.rabbitmq_adapter import TornadoAdapter, RabbitMQError
 from pika import TornadoConnection
 from tornado.testing import AsyncTestCase, gen_test
-from tornado.gen import Future, coroutine, Return
+from tornado.gen import coroutine, Return
+from tornado.concurrent import Future
 from tornado.queues import Queue
 
 _Error_Queue = Queue(maxsize=3)
@@ -81,7 +82,7 @@ class TestMockTornadoAdapter(AsyncTestCase):
         self.assertTrue(success)
         body = "Hello World"
         yield self._adapter.receive(self._exchange, self._routing_key, self._queue,
-                                    functools.partial(self._process, wait_time=20.0))
+                                    functools.partial(self._process, wait_time=10.0))
         yield self._adapter.publish(self._exchange, "timeout.hello", body)
         for i in range(3):
             value = yield _Error_Queue.get()

@@ -83,7 +83,9 @@ class AsyncProcess(object):
         try:
             while True:
                 line = yield stream.read_until("\n")
-                end = -2 if line.endswith("\r\n") else -1
+                if isinstance(line, str):
+                    line = line.decode("utf-8")
+                end = -2 if line.endswith(u"\r\n") else -1
                 log_handler(line[:end])
         except StreamClosedError:
             pass
