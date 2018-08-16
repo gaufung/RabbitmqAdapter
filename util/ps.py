@@ -12,9 +12,9 @@ from collections import namedtuple, OrderedDict
 import signal
 import psutil
 
-Resource = namedtuple('Resource', ['cpu_avg', 'cpu_max', 'mem_avg', 'mem_max'])
+_Resource = namedtuple('Resource', ['cpu_avg', 'cpu_max', 'mem_avg', 'mem_max'])
 
-ProcessCpuTimes = namedtuple('ProcessCpuTimes', ['user', 'system', 'children_user', 'children_system'])
+_ProcessCpuTimes = namedtuple('ProcessCpuTimes', ['user', 'system', 'children_user', 'children_system'])
 
 
 def _memory_items():
@@ -26,10 +26,10 @@ def _memory_items():
         ['rss', 'vms', 'num_page_faults', 'peak_wset', 'wset', 'peak_paged_pool', 'paged_pool', 'peak_nonpaged_pool', 'nonpaged_pool', 'pagefile', 'peak_pagefile', 'private']
 
 
-ProcessMemory = namedtuple("ProcessMemory", _memory_items())
+_ProcessMemory = namedtuple("ProcessMemory", _memory_items())
 
 
-class ProcessCpuTimesX(ProcessCpuTimes):
+class _ProcessCpuTimesX(_ProcessCpuTimes):
     """
     extension of ProcessCpuTimes by overloading -, + and  += operations
     """
@@ -38,15 +38,15 @@ class ProcessCpuTimesX(ProcessCpuTimes):
 
     def __sub__(self, other):
         values = [getattr(self, key) - getattr(other, key) for key in self._fields]
-        return ProcessCpuTimesX(values)
+        return _ProcessCpuTimesX(values)
 
     def __add__(self, other):
         values = [getattr(self, key) + getattr(other, key) for key in self._fields]
-        return ProcessCpuTimesX(values)
+        return _ProcessCpuTimesX(values)
 
     def __iadd__(self, other):
         values = [getattr(self, key) + getattr(other, key) for key in self._fields]
-        self = ProcessCpuTimesX(values)
+        self = _ProcessCpuTimesX(values)
         return self
 
     def average(self, time_interval):
@@ -55,7 +55,7 @@ class ProcessCpuTimesX(ProcessCpuTimes):
         return float(self.user + self.system) / time_interval * 100
 
 
-class ProcessMemoryX(ProcessMemory):
+class _ProcessMemoryX(_ProcessMemory):
     """
     extension of ProcessMemory by overloading + operations
     """
@@ -64,15 +64,15 @@ class ProcessMemoryX(ProcessMemory):
 
     def __add__(self, other):
         values = [getattr(self, key) + getattr(other, key) for key in self._fields]
-        return ProcessMemoryX(values)
+        return _ProcessMemoryX(values)
 
     def __iadd__(self, other):
         values = [getattr(self, key) + getattr(other, key) for key in self._fields]
-        self = ProcessMemoryX(values)
+        self = _ProcessMemoryX(values)
         return self
 
 
-class SystemResource(object):
+class _SystemResource(object):
     """
     System Resources
     """
@@ -87,13 +87,13 @@ class SystemResource(object):
         :return:
         """
         with self._lock:
-            cpu = ProcessCpuTimesX([0, 0, 0, 0])
-            memory = ProcessMemoryX([0] * len(_memory_items()))
+            cpu = _ProcessCpuTimesX([0, 0, 0, 0])
+            memory = _ProcessMemoryX([0] * len(_memory_items()))
             for pid in psutil.pids():
                 try:
                     process = psutil.Process(pid)
                     cpu_times = process.cpu_times()
-                    cpu += ProcessCpuTimesX([cpu_times.user, 0, cpu_times.system, 0])
+                    cpu += _ProcessCpuTimesX([cpu_times.user, 0, cpu_times.system, 0])
                     memory += process.memory_info()
                 except psutil.NoSuchProcess:
                     pass
@@ -144,16 +144,16 @@ class SystemResource(object):
             res_list = self._snapshots[begin_index:]
             del self._monitor_dict[name]
         if not res_list:
-            return Resource(0, 0, 0, 0)
+            return _Resource(0, 0, 0, 0)
         elif len(res_list) == 1:
             mem_avg = mem_max = res_list[0][2].rss >> 20
-            return Resource(0, 0, mem_avg, mem_max)
+            return _Resource(0, 0, mem_avg, mem_max)
         else:
             cpu_max = cpu_avg = (res_list[-1][1] - res_list[0][1]).average(res_list[-1][0] - res_list[0][0])
             mems = [res[2].rss >> 20 for res in res_list]
             mem_avg = sum(mems) / len(res_list)
             mem_max = max(mems)
-            return Resource(cpu_avg, cpu_max, mem_avg, mem_max)
+            return _Resource(cpu_avg, cpu_max, mem_avg, mem_max)
 
     @staticmethod
     def cpu_snapshot():
@@ -164,13 +164,13 @@ class SystemResource(object):
         return psutil.virtual_memory()
 
 
-class SystemResourceThread(threading.Thread):
+class _SystemResourceThread(threading.Thread):
     """
     worker for system resource monitor
     """
     def __init__(self, interval_time=5, clear_interval=10000):
-        super(SystemResourceThread, self).__init__()
-        self._sys_res = SystemResource()
+        super(_SystemResourceThread, self).__init__()
+        self._sys_res = _SystemResource()
         self._interval_time = interval_time
         self._flag = True
         self._clear_interval = clear_interval
@@ -193,9 +193,12 @@ class SystemResourceThread(threading.Thread):
         return self._sys_res
 
     def start(self):
-        super(SystemResourceThread, self).start()
+        super(_SystemResourceThread, self).start()
 
         def on_terminate():
             self._terminate()
             self.join()
         signal.signal(signal.SIGTERM, on_terminate)
+
+
+system_monitor = _SystemResourceThread()
