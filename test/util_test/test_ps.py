@@ -4,13 +4,13 @@
 import unittest
 import sys
 import time
-from util.ps import ProcessCpuTimesX, ProcessMemoryX, SystemResource, Resource, SystemResourceThread
+from util.ps import _ProcessCpuTimesX, _ProcessMemoryX, _SystemResource, _Resource, _SystemResourceThread
 
 
 class TestProcessCpuTimesX(unittest.TestCase):
     def setUp(self):
-        self.a = ProcessCpuTimesX([0, 8, 2, 9])
-        self.b = ProcessCpuTimesX([3, 2, 7, 9])
+        self.a = _ProcessCpuTimesX([0, 8, 2, 9])
+        self.b = _ProcessCpuTimesX([3, 2, 7, 9])
 
     def test_sub(self):
         res = self.a - self.b
@@ -46,13 +46,13 @@ class TestProcessMemoryX(unittest.TestCase):
     def setUp(self):
         # darwin
         if sys.platform.startswith("darwin"):
-            self.a = ProcessMemoryX([0, 1, 2, 3])
-            self.b = ProcessMemoryX([5, 6, 7, 8])
+            self.a = _ProcessMemoryX([0, 1, 2, 3])
+            self.b = _ProcessMemoryX([5, 6, 7, 8])
             self.res = [5, 7, 9, 11]
         # linux
         else:
-            self.a = ProcessMemoryX([0, 1, 2, 3, 4, 5, 9])
-            self.b = ProcessMemoryX([9, 8, 7, 6, 5, 4, 0])
+            self.a = _ProcessMemoryX([0, 1, 2, 3, 4, 5, 9])
+            self.b = _ProcessMemoryX([9, 8, 7, 6, 5, 4, 0])
             self.res = [9, 9, 9, 9, 9, 9, 9]
 
     def test_add(self):
@@ -68,12 +68,12 @@ class TestProcessMemoryX(unittest.TestCase):
 
 class TestSystemResource(unittest.TestCase):
     def test_take_snapshot(self):
-        sr = SystemResource()
+        sr = _SystemResource()
         sr.take_snapshot()
         self.assertEquals(1, len(sr._snapshots))
 
     def test_clear_expired_snapshot(self):
-        sr = SystemResource()
+        sr = _SystemResource()
         for _ in range(10):
             sr.take_snapshot()
         sr.set_sample("hello")
@@ -82,18 +82,18 @@ class TestSystemResource(unittest.TestCase):
         self.assertEquals(1, len(sr._snapshots))
 
     def test_clear_monitor(self):
-        sr = SystemResource()
+        sr = _SystemResource()
         r1 = sr.get_sample("none")
         self.assertIsNone(r1)
         sr.take_snapshot()
         sr.set_sample("first")
         r2 = sr.get_sample("first")
-        self.assertTupleEqual(Resource(0, 0, 0, 0), r2)
+        self.assertTupleEqual(_Resource(0, 0, 0, 0), r2)
 
 
 class TestSystemResourceThread(unittest.TestCase):
     def setUp(self):
-        self.t = SystemResourceThread(1)
+        self.t = _SystemResourceThread(1)
         self.t.start()
 
     def test_monitor(self):
