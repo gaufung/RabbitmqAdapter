@@ -159,9 +159,21 @@ class TornadoAdapter(object):
         establishing two connections for publishing and receiving respectively.
         :return: True if establish successfully.
         """
+        warnings.warn("Calling connect() method is unnecessary. Call `publish`, `receive` and `rpc` methods straightly. ",
+                      category=DeprecationWarning, stacklevel=2)
         self._publish_connection = yield self._create_connection(self._parameter)
         self._receive_connection = yield self._create_connection(self._parameter)
         raise gen.Return(True)
+
+    @gen.coroutine
+    def _try_connect_publish_connection(self):
+        if self._publish_connection is None or not self._publish_connection.is_open:
+            self._publish_connection = yield self._create_connection(self._parameter)
+
+    @gen.coroutine
+    def _try_connect_receive_connections(self):
+        if self._receive_connection is None or not self._receive_connection.is_open:
+            self._receive_connection = yield self._create_connection(self._parameter)
 
     @property
     def logger(self):
@@ -258,6 +270,7 @@ class TornadoAdapter(object):
         :param properties: properties
         :return: None
         """
+        yield self._try_connect_publish_connection()
         self.logger.info("preparing to publish. exchange: %s; routing_key: %s" % (exchange, routing_key,))
         channel = yield self._create_channel(self._publish_connection)
         channel.basic_publish(exchange=exchange, routing_key=routing_key, body=body, properties=properties)
@@ -278,8 +291,9 @@ class TornadoAdapter(object):
         :param prefetch_count: prefetch count
         :return: None
         """
+        yield self._try_connect_receive_connections()
         self.logger.info("[receive] exchange: %s; routing key: %s; queue name: %s" % (exchange, routing_key, queue_name,))
-        channel = yield self._create_channel(self._publish_connection)
+        channel = yield self._create_channel(self._receive_connection)
         yield self._queue_declare(channel, queue=queue_name, auto_delete=False)
         if routing_key != "":
             yield self._exchange_declare(channel, exchange=exchange)
@@ -327,6 +341,7 @@ class TornadoAdapter(object):
         :param timeout: timeout
         :return: result or Exception("timeout")
         """
+        yield self._try_connect_receive_connections()
         self.logger.info("preparing to rpc call. exchange: %s; routing key: %s" % (exchange, routing_key, ))
         if exchange not in self._rpc_exchange_dict:
             self._rpc_exchange_dict[exchange] = Queue(maxsize=1)

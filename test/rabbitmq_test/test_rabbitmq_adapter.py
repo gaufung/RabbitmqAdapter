@@ -35,8 +35,6 @@ class TestTornadoAdapterPublish(AsyncTestCase):
 
     @gen_test(timeout=5)
     def test_publish(self):
-        success = yield self._adapter.connect()
-        self.assertTrue(success)
         expect_body = 'Hello World!'
         yield self._adapter.receive(self.exchange, self.routing_key, self.queue,
                                     functools.partial(self._process, back_value=True))
@@ -46,8 +44,6 @@ class TestTornadoAdapterPublish(AsyncTestCase):
 
     @gen_test(timeout=5)
     def test_publish_with_reply(self):
-        success = yield self._adapter.connect()
-        self.assertTrue(success)
         corr_id = str(uuid.uuid4())
         reply_to = "queue_reply_to"
         yield self._adapter.receive(self.exchange, self.routing_key, self.queue,
@@ -83,20 +79,16 @@ class TestTornadoAdapterRpc(AsyncTestCase):
         else:
             return self._fib(n - 1) + self._fib(n - 2)
 
-    @gen_test(timeout=10)
+    @gen_test(timeout=20)
     def test_rpc_call(self):
-        success = yield self._adapter.connect()
-        self.assertTrue(success)
         yield self._adapter.receive(self._exchange, self._routing_key, self._queue, self.fib)
         value = yield self._adapter.rpc(self._exchange,"fib.call", "10")
         self.assertEqual(str(self._fib(10)), value)
 
     @gen_test(timeout=20)
     def test_rpc_calls(self):
-        success = yield self._adapter.connect()
-        self.assertTrue(success)
         yield self._adapter.receive(self._exchange, self._routing_key, self._queue, self.fib)
-        size = 2000
+        size = 20
         values =[random.randint(10, 20) for _ in range(size)]
         expect_values = [str(self._fib(value)) for value in values]
         actual_values = yield [
