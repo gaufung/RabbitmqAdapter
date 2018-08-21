@@ -315,8 +315,7 @@ class TornadoAdapter(object):
             result = yield handler(body)
             self.logger.info("message has been processed successfully")
             if properties is not None \
-                    and properties.reply_to is not None \
-                    and properties.correlation_id is not None:
+                    and properties.reply_to is not None:
                 self.logger.info("sending result back to %s" % properties.reply_to)
                 self.publish(exchange=exchange,
                              routing_key=properties.reply_to,
@@ -350,7 +349,10 @@ class TornadoAdapter(object):
         callback_queue = yield self._rpc_exchange_dict[exchange].get()
         yield self._rpc_exchange_dict[exchange].put(callback_queue)
         self.logger.info("starting call ")
-        result = yield self._call(exchange, callback_queue, routing_key, body, timeout)
+        corr_id = str(uuid.uuid1())
+        yield self.publish(exchange, routing_key, body,
+                           properties=BasicProperties(correlation_id=corr_id, reply_to=callback_queue))
+        result = yield self._call(corr_id, timeout)
         raise gen.Return(result)
 
     @gen.coroutine
@@ -368,14 +370,11 @@ class TornadoAdapter(object):
     def _rpc_callback_process(self, unused_channel, basic_deliver, properties, body):
         if properties.correlation_id in self._rpc_corr_id_dict:
             self._rpc_corr_id_dict[properties.correlation_id].set_result(body)
+        unused_channel.basic_ack(basic_deliver.delivery_tag)
 
-    def _call(self, exchange, callback_queue, routing_key, body, timeout=None):
+    def _call(self, corr_id, timeout=None):
         future = Future()
-        corr_id = str(uuid.uuid1())
         self._rpc_corr_id_dict[corr_id] = future
-        self.publish(exchange, routing_key, body,
-                     properties=BasicProperties(correlation_id=corr_id,
-                                                reply_to=callback_queue))
 
         def on_timeout():
             self.logger.error("timeout")
