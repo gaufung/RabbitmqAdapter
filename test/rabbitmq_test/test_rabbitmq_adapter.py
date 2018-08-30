@@ -38,7 +38,7 @@ class TestTornadoAdapterPublish(AsyncTestCase):
         expect_body = 'Hello World!'
         yield self._adapter.receive(self.exchange, self.routing_key, self.queue,
                                     functools.partial(self._process, back_value=True))
-        yield self._adapter.publish(self.exchange, "adapter.one", expect_body)
+        yield self._adapter.publish_resource(self.exchange, "adapter.one", expect_body)
         actual = yield self._result_queue.get()
         self.assertEqual(actual, expect_body)
 
@@ -50,8 +50,8 @@ class TestTornadoAdapterPublish(AsyncTestCase):
                                     functools.partial(self._process, back_value="Nice to meet you too!"))
         yield self._adapter.receive(self.exchange, reply_to, reply_to,
                                     functools.partial(self._process, back_value=True))
-        yield self._adapter.publish(self.exchange, "adapter.two", "Nice to meet you!",
-                                    properties=make_properties(correlation_id=corr_id, reply_to=reply_to))
+        yield self._adapter.publish_resource(self.exchange, "adapter.two", "Nice to meet you!",
+                                             properties=make_properties(correlation_id=corr_id, reply_to=reply_to))
         actual = yield self._result_queue.get()
         self.assertEqual(actual, "Nice to meet you!")
         actual = yield self._result_queue.get()
@@ -129,7 +129,7 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
     def test_publish_exception(self):
         p = SyncRabbitMQProducer(self._url)
         with self.assertRaises(RabbitMQError):
-            p.publish(self.exchange, "sync.dog", "nice to meet you")
+            p.publish_resource(self.exchange, "sync.dog", "nice to meet you")
         with self.assertRaises(RabbitMQError):
             p.publish_messages(self.exchange, {'sync.cat':"A cat","sync.dog":"A dog"})
         p.connect()
@@ -143,10 +143,10 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
         yield self._adapter.receive(self.exchange, self.routing_key, self.queue,
                                     functools.partial(self._process, back_value=True))
         with SyncRabbitMQProducer(self._url) as p:
-            p.publish(self.exchange,"sync.dog", "A big dog")
+            p.publish_resource(self.exchange, "sync.dog", "A big dog")
             value = yield self._result_queue.get()
             self.assertEqual(value, "A big dog")
-            p.publish(self.exchange, "sync.cat", "A big cat")
+            p.publish_resource(self.exchange, "sync.cat", "A big cat")
 
     @gen_test(timeout=10)
     def test_publish_multi(self):
@@ -155,7 +155,7 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
         yield self._adapter.receive(self.exchange, self.routing_key, self.queue,
                                     functools.partial(self._process, back_value=True))
         with SyncRabbitMQProducer(self._url) as p:
-            p.publish(self.exchange, "sync.dog", "A big dog", "A small dog", "A tiny dog", "A tough dog")
+            p.publish_resource(self.exchange, "sync.dog", "A big dog", "A small dog", "A tiny dog", "A tough dog")
             result_set = set(["A big dog", "A small dog", "A tiny dog", "A tough dog"])
             for i in range(4):
                 value = yield self._result_queue.get()
@@ -180,7 +180,7 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
         yield self._adapter.receive(self.exchange, reply_to, reply_to,
                                     functools.partial(self._process, back_value=True))
         with SyncRabbitMQProducer(self._url) as p:
-            p.publish(self.exchange, "sync.you", "Nice to meet you!", properties=make_properties(
+            p.publish_resource(self.exchange, "sync.you", "Nice to meet you!", properties=make_properties(
                 correlation_id=corrid, reply_to=reply_to))
 
         value = yield self._result_queue.get()
