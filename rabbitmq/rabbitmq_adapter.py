@@ -187,7 +187,8 @@ class TornadoAdapter(object):
         establishing two connections for publishing and receiving respectively.
         :return: True if establish successfully.
         """
-        warnings.warn("Calling connect() method is unnecessary. Call `publish`, `receive` and `rpc` methods straightly. ",
+        warnings.warn("Calling connect() method is unnecessary. "
+                      "Call `publish`, `receive` and `rpc` methods straightly. ",
                       category=DeprecationWarning, stacklevel=2)
         self._publish_connection = yield self._create_connection(self._parameter)
         self._receive_connection = yield self._create_connection(self._parameter)

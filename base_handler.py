@@ -1,6 +1,6 @@
 # -*- encoding:utf-8 -*-
 """
-base handler for asr train request handler
+tornado.web.RequestHandler's extension.
 """
 import json
 import logging
@@ -9,13 +9,10 @@ from traceback import format_exception
 from tornado.log import app_log
 from tornado.web import RequestHandler, HTTPError
 
-from common.errors import ASBaseError, ASSysError
+from common.errors import ASBaseError, _SYS
 
 
 class BaseHandler(RequestHandler):
-    """
-    Base handler
-    """
     def __init__(self, application, request, **kwargs):
         super(BaseHandler, self).__init__(application, request, **kwargs)
         self._logger = logging.getLogger(__name__)
@@ -40,19 +37,20 @@ class BaseHandler(RequestHandler):
         :param kwargs:
         :return:
         """
-        if "exc_info" in kwargs and isinstance(kwargs["exc_info"][1], ASBaseError):
-            exception = kwargs["exc_info"][1]
-            if self.settings["debug"]:
-                app_log.error(exception.message)
-            self.write_failure(exception.code, exception.message, exception.status_code)
+        if "exc_info" in kwargs and self.settings.get("server_traceback"):
+            lines = [line for line in format_exception(*kwargs["exc_info"])]
+            self.write_failure(_SYS, "".join(lines), 500)
         else:
-            if self.settings["server_traceback"] and "exc_info" in kwargs:
-                lines = [line for line in format_exception(*kwargs["exc_info"])]
-                self.write_failure(ASSysError.error_code(), "".join(lines))
-            elif "exc_info" in kwargs and not isinstance(kwargs["exc_info"][1], HTTPError):
-                self.write_failure(ASSysError.error_code(), str(kwargs["exc_info"][1]))
+            if "exc_info" in kwargs and isinstance(kwargs["exc_info"][1], ASBaseError):
+                exception = kwargs["exc_info"][1]
+                if self.settings["debug"]:
+                    app_log.error(exception.message)
+                self.write_failure(exception.code, exception.message, exception.status_code)
+            elif "exc_info" in kwargs and isinstance(kwargs["exc_info"][1], HTTPError):
+                exception = kwargs["exc_info"][1]
+                self.write_failure(_SYS, exception.reason, exception.status_code)
             else:
-                self.write_failure(ASSysError.error_code(), self._reason, status_code)
+                self.write_failure(_SYS, self._reason, status_code)
 
     def write_json(self, data, file_name=None):
         """
@@ -93,5 +91,7 @@ class BaseHandler(RequestHandler):
         self.set_header('Access-Control-Allow-Origin', '*')
         if status_code is not None:
             self.set_status(status_code)
+        if isinstance(err_msg, unicode):
+            err_msg = err_msg.encode("utf-8")
         self.write({"errId": err_code, "errMsg": err_msg})
         self.finish()
