@@ -8,6 +8,7 @@ import logging
 from pika import URLParameters
 from pika.compat import url_quote
 from tornado import gen
+from tornado.web import HTTPError
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 from tornado.ioloop import IOLoop
 
@@ -22,13 +23,12 @@ class RabbitMQMetrics(object):
         example: amqp://username:password@host:port/<virtual_host>[?query-string]
         :param url: AMQP URL to connect RabbitMQ
         """
-        log = self._get_log("__init__")
-        log.info("url: %s" % (url,))
         self.user_name, self.password, self.url_root = RabbitMQMetrics._parse_url(url)
+        self._logger = logging.getLogger(__name__)
 
-    @classmethod
-    def _get_log(cls, *names):
-        return logging.getLogger(".".join((cls.__module__, cls.__name__) + names))
+    @property
+    def logger(self):
+        return self._logger
 
     @staticmethod
     def _parse_url(url):
@@ -54,21 +54,20 @@ class RabbitMQMetrics(object):
         :param io_loop: ioloop
         :return: dictionary contains ('name', 'message', 'messages_unacknowledged', 'consumers') fields
         """
-        log = self._get_log("metrics")
-        log.info("queue name %s" % (queue_name,))
+        self.logger.info("queue name %s" % (queue_name,))
         try:
-            response = yield self._fetch(queue_name,timeout=timeout, io_loop=io_loop)
-            log.info("response %s" % (response,))
+            response = yield self._fetch(queue_name, timeout=timeout, io_loop=io_loop)
+            self.logger.info("response %s" % (response,))
             if response.code != 200:
                 err_msg = "fail to get metrics from RabbitMQ. response code %d" % response.code
                 raise Exception(err_msg)
             result = RabbitMQMetrics._convert(response)
-            log.info("result: %s" % (result,))
+            self.logger.info("result: %s" % (result,))
             raise gen.Return(result)
-        except gen.Return:
+        except (gen.Return, HTTPError):
             raise
         except Exception as e:
-            log.error("exception %s" % (e,))
+            self.logger.error("exception %s" % (e,))
             raise
 
     def _fetch(self, queue_name, timeout=None, io_loop=None):
