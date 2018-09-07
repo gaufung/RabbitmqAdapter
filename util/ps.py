@@ -176,7 +176,7 @@ class _SystemResourceThread(threading.Thread):
         self._clear_interval = clear_interval
         self._stop_event = threading.Event()
 
-    def _terminate(self):
+    def terminate(self):
         self._flag = False
 
     def run(self):
@@ -196,7 +196,7 @@ class _SystemResourceThread(threading.Thread):
         super(_SystemResourceThread, self).start()
 
         def on_terminate():
-            self._terminate()
+            self.terminate()
             self.join()
         signal.signal(signal.SIGTERM, on_terminate)
 

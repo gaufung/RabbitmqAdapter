@@ -103,7 +103,7 @@ class TestSystemResourceThread(unittest.TestCase):
         print(value)
 
     def tearDown(self):
-        self.t._terminate()
+        self.t.terminate()
 
 
 if __name__ == "__main__":
