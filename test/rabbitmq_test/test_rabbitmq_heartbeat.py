@@ -1,16 +1,18 @@
 # -*- encoding:utf-8 -*-
-from __future__ import unicode_literals
+import functools
 import time
 import unittest
-import functools
-from rabbitmq.rabbitmq_adapter import TornadoAdapter, RabbitMQError
-from pika import TornadoConnection
-from tornado.testing import AsyncTestCase, gen_test
-from tornado.gen import coroutine, Return
-from tornado.concurrent import Future
-from tornado.queues import Queue
 
-_Error_Queue = Queue(maxsize=3)
+import pika
+from pika import TornadoConnection
+from tornado.concurrent import Future
+from tornado.gen import coroutine
+from tornado.queues import Queue
+from tornado.testing import AsyncTestCase, gen_test
+
+from common.rabbitmq import TornadoAdapter, RabbitMQError
+
+_queue = Queue(maxsize=3)
 
 
 class MockTornadoAdapter(TornadoAdapter):
@@ -34,7 +36,7 @@ class MockTornadoAdapter(TornadoAdapter):
                     self.logger.error("closing connection: reply code:%s, reply_text: %s. system will exist" % (
                     reply_code, reply_text,))
                     #raise RabbitMQError("close connection error")
-                    _Error_Queue.put(RabbitMQError("close connection error"))
+                    _queue.put(RabbitMQError("close connection error"))
 
             TornadoConnection(parameter,
                               on_open_callback=open_callback,
@@ -51,7 +53,7 @@ class MockTornadoAdapter(TornadoAdapter):
             if reply_code not in [self._NORMAL_CLOSE_CODE, self._USER_CLOSE_CODE]:
                 self.logger.error("channel closed. reply code: %s; reply text: %s. system will exist"
                                   % (reply_code, reply_txt,))
-                _Error_Queue.put(RabbitMQError("close channel error"))
+                _queue.put(RabbitMQError("close channel error"))
 
         def open_callback(channel):
             self.logger.info("created channel")
@@ -63,19 +65,35 @@ class MockTornadoAdapter(TornadoAdapter):
 
 
 class TestMockTornadoAdapter(AsyncTestCase):
+
+    RABBITMQ_SERVER = 'amqp://dev:aispeech2018@10.12.6.35:5672/'
+
     def setUp(self):
         super(TestMockTornadoAdapter, self).setUp()
-        self._url = 'amqp://dev:aispeech2018@10.12.7.22:5672/%2f?heartbeat=5'
+        self._url = 'amqp://dev:aispeech2018@10.12.6.35:5672/%2f?heartbeat=5'
         self._adapter = MockTornadoAdapter(self._url, self.io_loop)
         self._exchange = "timeout_exchange"
         self._routing_key = "timeout.*"
-        self._queue = "timeout_queue"
+        self._queue = "test_timeout_queue"
+
+    def tearDown(self):
+        self._delete_queues(self._queue)
+        super(TestMockTornadoAdapter, self).tearDown()
+
+    def _delete_queues(self, *queues):
+        connection = pika.BlockingConnection(pika.URLParameters(self.RABBITMQ_SERVER))
+        channel = connection.channel()
+        for queue in queues:
+            channel.queue_delete(queue)
+        connection.close()
 
     @coroutine
     def _process(self, body, wait_time):
+        print(body)
         time.sleep(wait_time)
-        raise Return(body)
+        yield _queue.put(body)
 
+    @unittest.skip("need to be optimized")
     @gen_test(timeout=60)
     def test_connection_close_error(self):
         success = yield self._adapter.connect()
@@ -84,9 +102,7 @@ class TestMockTornadoAdapter(AsyncTestCase):
         yield self._adapter.receive(self._exchange, self._routing_key, self._queue,
                                     functools.partial(self._process, wait_time=10.0))
         yield self._adapter.publish(self._exchange, "timeout.hello", body)
-        for i in range(3):
-            value = yield _Error_Queue.get()
-            self.assertIsInstance(value, RabbitMQError)
+        yield _queue.get(body)
 
 
 if __name__ == "__main__":

@@ -1,10 +1,11 @@
 # -*- encoding:utf-8 -*-
-from __future__ import unicode_literals
-import unittest
 import os
 import time
+import unittest
+
 from tornado.testing import gen_test, AsyncTestCase
-from util.async_process import AsyncProcess, AsyncProcessPool, AsyncThreadPool
+
+from common.util import AsyncProcess, AsyncProcessPool, AsyncThreadPool
 
 _base_dir = os.path.dirname(os.path.abspath(__file__))
 

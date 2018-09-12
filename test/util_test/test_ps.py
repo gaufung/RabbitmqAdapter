@@ -1,10 +1,12 @@
 """
     unit-test of common.ps_util module
 """
-import unittest
 import sys
 import time
-from util.ps import _ProcessCpuTimesX, _ProcessMemoryX, _SystemResource, _Resource, _SystemResourceThread
+import unittest
+
+from common.util.ps import _ProcessCpuTimesX, _ProcessMemoryX, _SystemResource, \
+    _Resource, _SystemResourceThread
 
 
 class TestProcessCpuTimesX(unittest.TestCase):

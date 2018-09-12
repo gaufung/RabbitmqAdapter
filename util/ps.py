@@ -3,13 +3,12 @@
     process and system utilities
     wrapping psutil package
 """
-from __future__ import unicode_literals
-from __future__ import print_function
+import signal
+import sys
 import threading
 import time
-import sys
 from collections import namedtuple, OrderedDict
-import signal
+
 import psutil
 
 _Resource = namedtuple('Resource', ['cpu_avg', 'cpu_max', 'mem_avg', 'mem_max'])

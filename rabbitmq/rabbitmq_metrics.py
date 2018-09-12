@@ -2,7 +2,6 @@
 """
 RabbitMQ metric
 """
-from __future__ import unicode_literals
 import json
 import logging
 from pika import URLParameters
@@ -57,12 +56,11 @@ class RabbitMQMetrics(object):
         self.logger.info("queue name %s" % (queue_name,))
         try:
             response = yield self._fetch(queue_name, timeout=timeout, io_loop=io_loop)
-            self.logger.info("response %s" % (response,))
             if response.code != 200:
                 err_msg = "fail to get metrics from RabbitMQ. response code %d" % response.code
                 raise Exception(err_msg)
-            result = RabbitMQMetrics._convert(response)
-            self.logger.info("result: %s" % (result,))
+            result = RabbitMQMetrics._format(response)
+            self.logger.info("result: %s", json.dumps(result))
             raise gen.Return(result)
         except (gen.Return, HTTPError):
             raise
@@ -70,6 +68,7 @@ class RabbitMQMetrics(object):
             self.logger.error("exception %s" % (e,))
             raise
 
+    @gen.coroutine
     def _fetch(self, queue_name, timeout=None, io_loop=None):
         url = self.url_root + url_quote(queue_name)
         if io_loop is None:
@@ -77,14 +76,17 @@ class RabbitMQMetrics(object):
         client = AsyncHTTPClient(io_loop)
         request = HTTPRequest(url, request_timeout=timeout, headers={"content-type": "application/json"},
                               auth_username=self.user_name, auth_password=self.password)
-        return client.fetch(request)
+        response = yield client.fetch(request)
+        self.logger.info("rabbitmq queue metric request. response code: %d, resonse content %s",
+                         response.code, response.body)
+        raise gen.Return(response)
 
     @staticmethod
-    def _convert(response):
+    def _format(response):
         data = json.loads(response.body)
         return {
-            'queueName': data['name'],
-            'messagesTotal': data['messages'],
-            'messagesUnack': data['messages_unacknowledged'],
-            'consumers': data['consumers']
+            'queueName': data.get("name", ""),
+            'messagesTotal': data.get('messages', 0),
+            'messagesUnack': data.get('messages_unacknowledged', 0),
+            'consumers': data.get('consumers', ""),
         }

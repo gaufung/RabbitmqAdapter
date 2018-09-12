@@ -1,25 +1,42 @@
 # -*- encoding:utf-8 -*-
-from __future__ import unicode_literals
 import unittest
+
+import pika
 from tornado.testing import AsyncTestCase, gen_test
-from rabbitmq.rabbitmq_metrics import RabbitMQMetrics
+
+from common.rabbitmq import RabbitMQMetrics
 
 
 class TestRabbitMQMetrics(AsyncTestCase):
+    RABBITMQ_SERVER = 'amqp://dev:aispeech2018@10.12.6.35:5672/'
+
+    def setUp(self):
+        self._queue = "test_queue_metric"
+        connection = pika.BlockingConnection(pika.URLParameters(self.RABBITMQ_SERVER))
+        channel = connection.channel()
+        channel.queue_declare(queue=self._queue)
+        connection.close()
+        super(TestRabbitMQMetrics, self).setUp()
+
+    def tearDown(self):
+        connection = pika.BlockingConnection(pika.URLParameters(self.RABBITMQ_SERVER))
+        channel = connection.channel()
+        channel.queue_delete(queue=self._queue)
+        connection.close()
+
+
     def test_init(self):
-        url = 'amqp://dev:aispeech2018@10.12.7.22:5672/'
-        rabbitmq_metrics = RabbitMQMetrics(url)
+        rabbitmq_metrics = RabbitMQMetrics(self.RABBITMQ_SERVER)
         self.assertEqual(rabbitmq_metrics.user_name, "dev")
         self.assertEqual(rabbitmq_metrics.password, "aispeech2018")
-        self.assertEqual(rabbitmq_metrics.url_root, "http://10.12.7.22:15672/api/queues/%2F/")
+        self.assertEqual(rabbitmq_metrics.url_root, "http://10.12.6.35:15672/api/queues/%2F/")
 
     @gen_test
     def test_fetch(self):
-        url = 'amqp://dev:aispeech2018@10.12.7.22:5672/'
-        rabbitmq_metrics = RabbitMQMetrics(url)
-        response = yield rabbitmq_metrics._fetch("lzl_test", None, self.io_loop)
+        rabbitmq_metrics = RabbitMQMetrics(self.RABBITMQ_SERVER)
+        response = yield rabbitmq_metrics._fetch(self._queue, None, self.io_loop)
         self.assertIsNotNone(response)
-        data = RabbitMQMetrics._convert(response)
+        data = RabbitMQMetrics._format(response)
         self.assertEqual(len(data), 4)
         # fetch non existing queue
         with self.assertRaises(Exception):
@@ -27,9 +44,8 @@ class TestRabbitMQMetrics(AsyncTestCase):
 
     @gen_test
     def test_metrics(self):
-        url = 'amqp://dev:aispeech2018@10.12.7.22:5672/'
-        rabbitmq_metrics = RabbitMQMetrics(url)
-        result = yield rabbitmq_metrics.metrics("lzl_test", None, self.io_loop)
+        rabbitmq_metrics = RabbitMQMetrics(self.RABBITMQ_SERVER)
+        result = yield rabbitmq_metrics.metrics(self._queue, None, self.io_loop)
         self.assertIsNotNone(result)
         self.assertTrue(isinstance(result, dict))
         with self.assertRaises(Exception):

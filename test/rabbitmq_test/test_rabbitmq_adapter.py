@@ -1,23 +1,25 @@
 # -*- encoding:utf-8 -*-
-from __future__ import unicode_literals
-import unittest
 import functools
-import uuid
 import random
-from rabbitmq.rabbitmq_adapter import TornadoAdapter, RabbitMQError, SyncRabbitMQProducer
-from tornado.gen import coroutine, Return, sleep
-from tornado.testing import AsyncTestCase, gen_test
-from tornado.queues import Queue
-from rabbitmq.rabbitmq_util import make_properties
-from concurrent.futures import ThreadPoolExecutor
+import unittest
+import uuid
 
-EXECUTOR = ThreadPoolExecutor(max_workers=10)
+import pika
+from pika import BasicProperties
+from tornado.gen import coroutine, Return
+from tornado.queues import Queue
+from tornado.testing import AsyncTestCase, gen_test
+
+from common.rabbitmq import TornadoAdapter, RabbitMQError, SyncRabbitMQProducer
+from common.util import AsyncThreadPool
+
+EXECUTOR = AsyncThreadPool(pool_size=10)
 
 
 class TestTornadoAdapterPublish(AsyncTestCase):
     def setUp(self):
         super(TestTornadoAdapterPublish, self).setUp()
-        self._url = 'amqp://dev:aispeech2018@10.12.7.22:5672/'
+        self._url = 'amqp://dev:aispeech2018@10.12.6.35:5672/'
         self._adapter = TornadoAdapter(self._url, io_loop=self.io_loop)
         self._result_queue = Queue(maxsize=2)
         self.exchange = "adapter_exchange"
@@ -25,8 +27,16 @@ class TestTornadoAdapterPublish(AsyncTestCase):
         self.queue = "adapter_queue"
 
     def tearDown(self):
+        self._delete_queues(self.queue)
         self._adapter.close()
         super(TestTornadoAdapterPublish, self).tearDown()
+
+    def _delete_queues(self, *queues):
+        connection = pika.BlockingConnection(pika.URLParameters(self._url))
+        channel = connection.channel()
+        for queue in queues:
+            channel.queue_delete(queue)
+        connection.close()
 
     @coroutine
     def _process(self, body, back_value):
@@ -38,7 +48,7 @@ class TestTornadoAdapterPublish(AsyncTestCase):
         expect_body = 'Hello World!'
         yield self._adapter.receive(self.exchange, self.routing_key, self.queue,
                                     functools.partial(self._process, back_value=True))
-        yield self._adapter.publish_resource(self.exchange, "adapter.one", expect_body)
+        yield self._adapter.publish(self.exchange, "adapter.one", expect_body)
         actual = yield self._result_queue.get()
         self.assertEqual(actual, expect_body)
 
@@ -50,8 +60,8 @@ class TestTornadoAdapterPublish(AsyncTestCase):
                                     functools.partial(self._process, back_value="Nice to meet you too!"))
         yield self._adapter.receive(self.exchange, reply_to, reply_to,
                                     functools.partial(self._process, back_value=True))
-        yield self._adapter.publish_resource(self.exchange, "adapter.two", "Nice to meet you!",
-                                             properties=make_properties(correlation_id=corr_id, reply_to=reply_to))
+        yield self._adapter.publish(self.exchange, "adapter.two", "Nice to meet you!",
+                                             properties=BasicProperties(correlation_id=corr_id, reply_to=reply_to))
         actual = yield self._result_queue.get()
         self.assertEqual(actual, "Nice to meet you!")
         actual = yield self._result_queue.get()
@@ -61,7 +71,7 @@ class TestTornadoAdapterPublish(AsyncTestCase):
 class TestTornadoAdapterRpc(AsyncTestCase):
     def setUp(self):
         super(TestTornadoAdapterRpc, self).setUp()
-        self._url = 'amqp://dev:aispeech2018@10.12.7.22:5672/'
+        self._url = 'amqp://dev:aispeech2018@10.12.6.35:5672/'
         self._adapter = TornadoAdapter(self._url, self.io_loop)
         self._exchange = "adapter_rpc"
         self._routing_key = "fib.*"
@@ -106,8 +116,16 @@ class TestTornadoAdapterRpc(AsyncTestCase):
             yield self._adapter.rpc(self._exchange, "fib.50", "50", 3)
 
     def tearDown(self):
+        self._delete_queues(self._queue)
         self._adapter.close()
         super(TestTornadoAdapterRpc, self).tearDown()
+
+    def _delete_queues(self, *queues):
+        connection = pika.BlockingConnection(pika.URLParameters(self._url))
+        channel = connection.channel()
+        for queue in queues:
+            channel.queue_delete(queue)
+        connection.close()
 
 
 class TestSyncRabbitMQProducer(AsyncTestCase):
@@ -119,6 +137,19 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
         self.exchange = "sync_exchange"
         self.routing_key = "sync.*"
         self.queue = "sync_queue"
+        
+    def tearDown(self):
+        self._delete_queues(self.queue)
+        self._adapter.close()
+        super(TestSyncRabbitMQProducer, self).tearDown()
+
+    def _delete_queues(self, *queues):
+        connection = pika.BlockingConnection(pika.URLParameters(self._url))
+        channel = connection.channel()
+        for queue in queues:
+            channel.queue_delete(queue)
+        connection.close()
+        
 
     @coroutine
     def _process(self, body, back_value):
@@ -129,7 +160,7 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
     def test_publish_exception(self):
         p = SyncRabbitMQProducer(self._url)
         with self.assertRaises(RabbitMQError):
-            p.publish_resource(self.exchange, "sync.dog", "nice to meet you")
+            p.publish(self.exchange, "sync.dog", "nice to meet you")
         with self.assertRaises(RabbitMQError):
             p.publish_messages(self.exchange, {'sync.cat':"A cat","sync.dog":"A dog"})
         p.connect()
@@ -143,10 +174,10 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
         yield self._adapter.receive(self.exchange, self.routing_key, self.queue,
                                     functools.partial(self._process, back_value=True))
         with SyncRabbitMQProducer(self._url) as p:
-            p.publish_resource(self.exchange, "sync.dog", "A big dog")
+            p.publish(self.exchange, "sync.dog", "A big dog")
             value = yield self._result_queue.get()
             self.assertEqual(value, "A big dog")
-            p.publish_resource(self.exchange, "sync.cat", "A big cat")
+            p.publish(self.exchange, "sync.cat", "A big cat")
 
     @gen_test(timeout=10)
     def test_publish_multi(self):
@@ -155,7 +186,7 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
         yield self._adapter.receive(self.exchange, self.routing_key, self.queue,
                                     functools.partial(self._process, back_value=True))
         with SyncRabbitMQProducer(self._url) as p:
-            p.publish_resource(self.exchange, "sync.dog", "A big dog", "A small dog", "A tiny dog", "A tough dog")
+            p.publish(self.exchange, "sync.dog", "A big dog", "A small dog", "A tiny dog", "A tough dog")
             result_set = set(["A big dog", "A small dog", "A tiny dog", "A tough dog"])
             for i in range(4):
                 value = yield self._result_queue.get()
@@ -180,7 +211,7 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
         yield self._adapter.receive(self.exchange, reply_to, reply_to,
                                     functools.partial(self._process, back_value=True))
         with SyncRabbitMQProducer(self._url) as p:
-            p.publish_resource(self.exchange, "sync.you", "Nice to meet you!", properties=make_properties(
+            p.publish(self.exchange, "sync.you", "Nice to meet you!", properties=BasicProperties(
                 correlation_id=corrid, reply_to=reply_to))
 
         value = yield self._result_queue.get()

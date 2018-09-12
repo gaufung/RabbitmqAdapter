@@ -1,13 +1,14 @@
 # -*- coding:utf-8 -*-
-import os
 import logging
+import os
 import signal
+
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-from tornado.process import Subprocess
-from tornado.gen import Task
 from tornado import gen
+from tornado.gen import Task
 from tornado.ioloop import IOLoop
 from tornado.iostream import StreamClosedError
+from tornado.process import Subprocess
 
 
 class AsyncProcess(object):

@@ -1,8 +1,8 @@
 # -*- encoding:utf-8 -*-
-from __future__ import unicode_literals
-import unittest
-import errors
 
+import unittest
+
+from common import errors
 
 
 class TestASError(unittest.TestCase):
