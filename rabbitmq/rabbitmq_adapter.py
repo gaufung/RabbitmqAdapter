@@ -87,37 +87,36 @@ class SyncRabbitMQProducer(object):
         return not isinstance(exc_val, Exception)
 
     def publish(self, exchange, routing_key, *messages, **kwargs):
-        self.logger.info("[publishing] exchange name: %s; routing key: %s" % (exchange, routing_key,))
+        self.logger.info("[publishing] exchange name: %s; routing key: %s", exchange, routing_key)
         if self._channel is None:
             raise RabbitMQConnectError("channel has not been initialized")
         properties = kwargs.pop("properties") if kwargs.has_key("properties") else None
         try:
             for message in messages:
-                self.logger.info("publish message: %s" % message)
                 self._channel.basic_publish(exchange=exchange,
                                             routing_key=routing_key,
                                             body=str(message),
                                             properties=properties)
         except Exception as e:
-            self.logger.error("failed to publish message. %s" % e)
+            self.logger.error("failed to publish message. %s", e.message)
             raise RabbitMQPublishError("failed to publish message.")
 
     def publish_messages(self, exchange, messages, **kwargs):
-        self.logger.info("[publish_message] exchange name: %s" % exchange)
+        self.logger.info("[publish_message] exchange name: %s", exchange)
         if self._channel is None:
             raise RabbitMQConnectError("channel has not been initialized")
         if not isinstance(messages, dict):
             raise RabbitMQError("messages is not dict")
-        properties = kwargs.pop("properties") if kwargs.has_key("properties") else None
+        properties = kwargs.pop("properties") if "properties" in kwargs else None
         try:
             for routing_key, message in messages.items():
-                self.logger.info("routing key:%s, message: %s" % (routing_key, message, ))
+                self.logger.info("routing key:%s, message: %s", routing_key, message)
                 self._channel.basic_publish(exchange=exchange,
                                             routing_key=routing_key,
                                             body=str(message),
                                             properties=properties)
         except Exception as e:
-            self.logger.error("fail to publish message: %s" % e)
+            self.logger.error("fail to publish message: %s", e.message)
             raise RabbitMQPublishError("fail to publish message.")
 
     def connect(self):
@@ -198,7 +197,7 @@ class TornadoAdapter(object):
             if self._publish_connection is None or not self._publish_connection.is_open:
                 self._publish_connection = yield self._create_connection(self._parameter)
         except Exception as e:
-            self.logger.error("failed to create connection. %s" % e)
+            self.logger.error("failed to create connection. %s", e.message)
             raise RabbitMQConnectError("failed to create connection")
 
     @gen.coroutine
@@ -207,7 +206,7 @@ class TornadoAdapter(object):
             if self._receive_connection is None or not self._receive_connection.is_open:
                 self._receive_connection = yield self._create_connection(self._parameter)
         except Exception as e:
-            self.logger.error("failed to create connection. %s" % e)
+            self.logger.error("failed to create connection. %s", e.message)
             raise RabbitMQConnectError("failed to create connection")
 
     @property
@@ -345,7 +344,7 @@ class TornadoAdapter(object):
             channel.basic_consume(functools.partial(self._on_message, exchange=exchange, handler=handler)
                                   , queue=queue_name, no_ack=no_ack)
         except Exception as e:
-            self.logger.error("failed to receive message. %s" , e.message)
+            self.logger.error("failed to receive message. %s", e.message)
             raise RabbitMQReceiveError("failed to receive message")
 
     def _on_message(self, unused_channel, basic_deliver, properties, body, exchange, handler=None):
@@ -361,16 +360,16 @@ class TornadoAdapter(object):
             if properties is not None \
                     and properties.reply_to is not None:
                 self.logger.info("sending result back to %s", properties.reply_to)
-                self.publish(exchange=exchange,
-                             routing_key=properties.reply_to,
-                             properties=BasicProperties(correlation_id=properties.correlation_id),
-                             body=str(result))
-            unused_channel.basic_ack(basic_deliver.delivery_tag)
+                yield self.publish(exchange=exchange,
+                                   routing_key=properties.reply_to,
+                                   properties=BasicProperties(correlation_id=properties.correlation_id),
+                                   body=str(result))
         except Exception:
-            unused_channel.basic_ack(basic_deliver.delivery_tag)
             import traceback
             self.logger.error(traceback.format_exc())
             raise RabbitMQReceiveError("failed to handle received message.")
+        finally:
+            unused_channel.basic_ack(basic_deliver.delivery_tag)
 
     @gen.coroutine
     def rpc(self, exchange, routing_key, body, timeout=None):
@@ -387,7 +386,6 @@ class TornadoAdapter(object):
         """
         yield self._try_connect_receive_connections()
         self.logger.info("preparing to rpc call. exchange: %s; routing key: %s", exchange, routing_key)
-
         try:
             if exchange not in self._rpc_exchange_dict:
                 self._rpc_exchange_dict[exchange] = Queue(maxsize=1)
@@ -398,8 +396,8 @@ class TornadoAdapter(object):
             self.logger.info("starting call ")
             corr_id = str(uuid.uuid1())
             yield self.publish(exchange, routing_key, body,
-                            properties=BasicProperties(correlation_id=corr_id, reply_to=callback_queue))
-            result = yield self._call(corr_id, timeout)
+                               properties=BasicProperties(correlation_id=corr_id, reply_to=callback_queue))
+            result = yield self._wait_result(corr_id, timeout)
             raise gen.Return(result)
         except (gen.Return, RabbitMQError):
             raise
@@ -424,7 +422,7 @@ class TornadoAdapter(object):
             self._rpc_corr_id_dict[properties.correlation_id].set_result(body)
         unused_channel.basic_ack(basic_deliver.delivery_tag)
 
-    def _call(self, corr_id, timeout=None):
+    def _wait_result(self, corr_id, timeout=None):
         future = Future()
         self._rpc_corr_id_dict[corr_id] = future
 
