@@ -226,7 +226,7 @@ class TornadoAdapter(object):
             future.set_result(unused_connection)
 
         def open_error_callback(connection, exception):
-            self.logger.error("open connection with error: %s", exception.message)
+            self.logger.error("open connection with error: %s", exception)
             future.set_exception(exception)
 
         def close_callback(connection, reply_code, reply_text):
