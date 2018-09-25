@@ -39,18 +39,22 @@ class BaseHandler(RequestHandler):
         """
         if "exc_info" in kwargs and self.settings.get("server_traceback"):
             lines = [line for line in format_exception(*kwargs["exc_info"])]
-            self.write_failure(_SYS, "".join(lines), 500)
+            self.set_status(500)
+            self.write({"errId": _SYS, "errMsg": "".join(lines)})
         else:
             if "exc_info" in kwargs and isinstance(kwargs["exc_info"][1], ASBaseError):
                 exception = kwargs["exc_info"][1]
                 if self.settings["debug"]:
                     app_log.error(exception.message)
-                self.write_failure(exception.code, exception.message, exception.status_code)
+                self.set_status(exception.status_code)
+                self.write({"errId": exception.code, "errMsg": exception.message})
             elif "exc_info" in kwargs and isinstance(kwargs["exc_info"][1], HTTPError):
                 exception = kwargs["exc_info"][1]
-                self.write_failure(_SYS, exception.reason, exception.status_code)
+                self.set_status(exception.status_code)
+                self.write({"errId": _SYS, "errMsg": exception.reason})
             else:
-                self.write_failure(_SYS, self._reason, status_code)
+                self.set_status(status_code)
+                self.write({"errId": _SYS, "errMsg": self._reason})
 
     def write_json(self, data, file_name=None):
         """
@@ -68,30 +72,3 @@ class BaseHandler(RequestHandler):
             self.set_header("Content-Disposition", "attachment; filename=%s" % file_name)
         self.finish()
 
-    def write_success(self, data=None):
-        """
-        write success information to client
-        :param data: if it is None, write empty dictionary
-        :return: None
-        """
-        self.set_header('Access-Control-Allow-Origin', '*')
-        if data is None:
-            data = {}
-        self.write(data)
-        self.finish()
-
-    def write_failure(self, err_code, err_msg, status_code=None):
-        """
-        write failure information to client
-        :param err_code: error code
-        :param err_msg: error message
-        :param status_code: http status code
-        :return: None
-        """
-        self.set_header('Access-Control-Allow-Origin', '*')
-        if status_code is not None:
-            self.set_status(status_code)
-        if isinstance(err_msg, unicode):
-            err_msg = err_msg.encode("utf-8")
-        self.write({"errId": err_code, "errMsg": err_msg})
-        self.finish()
