@@ -4,6 +4,7 @@ import logging
 import uuid
 import warnings
 import sys
+import datetime
 from pika import URLParameters, ConnectionParameters, BlockingConnection
 from pika import TornadoConnection
 from pika import BasicProperties
@@ -398,6 +399,8 @@ class TornadoAdapter(object):
             yield self.publish(exchange, routing_key, body,
                                properties=BasicProperties(correlation_id=corr_id, reply_to=callback_queue))
             result = yield self._wait_result(corr_id, timeout)
+            if corr_id in self._rpc_corr_id_dict:
+                del self._rpc_corr_id_dict[corr_id]
             raise gen.Return(result)
         except (gen.Return, RabbitMQError):
             raise
@@ -427,12 +430,13 @@ class TornadoAdapter(object):
         self._rpc_corr_id_dict[corr_id] = future
 
         def on_timeout():
-            self.logger.error("timeout")
-            del self._rpc_corr_id_dict[corr_id]
-            future.set_exception(RabbitMQTimeoutError('rpc timeout'))
+            if corr_id in self._rpc_corr_id_dict:
+                self.logger.error("timeout")
+                del self._rpc_corr_id_dict[corr_id]
+                future.set_exception(RabbitMQTimeoutError('rpc timeout'))
 
         if timeout is not None:
-            self._io_loop.add_timeout(float(timeout), on_timeout)
+            self._io_loop.add_timeout(datetime.timedelta(seconds=timeout), on_timeout)
         return future
 
     def close(self):
