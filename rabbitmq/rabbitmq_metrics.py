@@ -7,8 +7,7 @@ import logging
 from pika import URLParameters
 from pika.compat import url_quote
 from tornado import gen
-from tornado.web import HTTPError
-from tornado.httpclient import AsyncHTTPClient, HTTPRequest
+from tornado.httpclient import AsyncHTTPClient, HTTPRequest, HTTPError
 from tornado.ioloop import IOLoop
 
 
@@ -51,7 +50,8 @@ class RabbitMQMetrics(object):
         :param queue_name: queue name
         :param timeout: request timeout
         :param io_loop: ioloop
-        :return: dictionary contains ('name', 'message', 'messages_unacknowledged', 'consumers') fields
+        :return: dictionary contains ('name', 'message', 'messages_unacknowledged', 'consumers') keys,
+                If the `queue_name` doesn't exist, it also return default dictionary.
         """
         self.logger.info("queue name %s" % (queue_name,))
         try:
@@ -62,8 +62,18 @@ class RabbitMQMetrics(object):
             result = RabbitMQMetrics._format(response)
             self.logger.info("result: %s", json.dumps(result))
             raise gen.Return(result)
-        except (gen.Return, HTTPError):
+        except gen.Return:
             raise
+        except HTTPError as e:
+            if e.code == 404:
+                raise gen.Return({
+                    'queueName': queue_name,
+                    'messagesTotal': 0,
+                    'messagesUnack': 0,
+                    'consumers': "",
+                })
+            else:
+                raise e
         except Exception as e:
             self.logger.error("exception %s" % (e,))
             raise

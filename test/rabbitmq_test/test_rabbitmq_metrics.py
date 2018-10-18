@@ -48,8 +48,16 @@ class TestRabbitMQMetrics(AsyncTestCase):
         result = yield rabbitmq_metrics.metrics(self._queue, None, self.io_loop)
         self.assertIsNotNone(result)
         self.assertTrue(isinstance(result, dict))
-        with self.assertRaises(Exception):
-            yield rabbitmq_metrics.metrics("non_existing_queue", None, self.io_loop)
+
+    @gen_test
+    def test_no_exist_metric(self):
+        rabbitmq_metrics = RabbitMQMetrics(self.RABBITMQ_SERVER)
+        result = yield rabbitmq_metrics.metrics("non_existing_queue", None, self.io_loop)
+        self.assertTrue(isinstance(result, dict))
+        self.assertEqual(result["queueName"], "non_existing_queue")
+        self.assertEqual(result["messagesTotal"], 0)
+        self.assertEqual(result["messagesUnack"], 0)
+        self.assertEqual(result["consumers"], "")
 
 
 if __name__ == "__main__":

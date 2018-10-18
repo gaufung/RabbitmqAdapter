@@ -131,7 +131,7 @@ class TestTornadoAdapterRpc(AsyncTestCase):
 class TestSyncRabbitMQProducer(AsyncTestCase):
     def setUp(self):
         super(TestSyncRabbitMQProducer, self).setUp()
-        self._url = 'amqp://dev:aispeech2018@10.12.7.22:5672/'
+        self._url = 'amqp://dev:aispeech2018@10.12.6.35:5672/'
         self._adapter = TornadoAdapter(self._url, io_loop=self.io_loop)
         self._result_queue = Queue(maxsize=10)
         self.exchange = "sync_exchange"
