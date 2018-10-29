@@ -39,6 +39,7 @@ class BaseHandler(RequestHandler):
         """
         if "exc_info" in kwargs and self.settings.get("server_traceback"):
             lines = [line for line in format_exception(*kwargs["exc_info"])]
+            self.logger.error("status code: 500; error message: %s", " ".join(lines))
             self.set_status(500)
             self.write({"errId": _SYS, "errMsg": "".join(lines)})
         else:
@@ -46,13 +47,19 @@ class BaseHandler(RequestHandler):
                 exception = kwargs["exc_info"][1]
                 if self.settings["debug"]:
                     app_log.error(exception.message)
+                self.logger.error("status code: %s, errId: %s, error message: %s",
+                                  str(exception.status_code), str(exception.code), exception.message)
                 self.set_status(exception.status_code)
                 self.write({"errId": exception.code, "errMsg": exception.message})
             elif "exc_info" in kwargs and isinstance(kwargs["exc_info"][1], HTTPError):
                 exception = kwargs["exc_info"][1]
+                self.logger.error("status code: %s, errId: %s, error message: %s",
+                                  str(exception.status_code), str(_SYS), exception.reason)
                 self.set_status(exception.status_code)
                 self.write({"errId": _SYS, "errMsg": exception.reason})
             else:
+                self.logger.error("status code: %s, errId: %s, error message: %s",
+                                  str(status_code), str(_SYS), self._reason)
                 self.set_status(status_code)
                 self.write({"errId": _SYS, "errMsg": self._reason})
 
