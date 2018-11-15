@@ -444,3 +444,17 @@ class TornadoAdapter(object):
             self._publish_connection.close()
         if self._receive_connection is not None and self._receive_connection.is_open:
             self._receive_connection.close()
+
+    def status(self):
+        """
+        to check tornado adapter connection status.
+        if `publish connection` is not None. whether it's open or not;
+        if `receive connection` is not None. whether it's open or not.
+        """
+        if self._publish_connection is not None:
+            if not self._publish_connection.is_open:
+                return False
+        if self._receive_connection is not None:
+            if not self._receive_connection.is_open:
+                return False
+        return True
