@@ -269,7 +269,7 @@ class TornadoAdapter(object):
             self.logger.info("declared exchange: %s", exchange)
             future.set_result(unframe)
 
-        channel.exchange_declare(callback=callback,
+        channel.exchange_declare(callback=callback, durable=True,
                                  exchange=exchange, exchange_type=exchange_type, **kwargs)
         return future
 
@@ -281,7 +281,7 @@ class TornadoAdapter(object):
             self.logger.info("declared queue: %s", method_frame.method.queue)
             future.set_result(method_frame.method.queue)
 
-        channel.queue_declare(callback=callback, queue=queue, **kwargs)
+        channel.queue_declare(callback=callback, queue=queue, durable=True, **kwargs)
         return future
 
     def _queue_bind(self, channel, queue, exchange, routing_key=None, **kwargs):
@@ -310,6 +310,8 @@ class TornadoAdapter(object):
         self.logger.info("preparing to publish. exchange: %s; routing_key: %s", exchange, routing_key)
         try:
             channel = yield self._create_channel(self._publish_connection)
+            if properties is None:
+                properties = BasicProperties(delivery_mode=2)
             channel.basic_publish(exchange=exchange, routing_key=routing_key, body=body, properties=properties)
             channel.close()
         except Exception as e:
@@ -363,7 +365,7 @@ class TornadoAdapter(object):
                 self.logger.info("sending result back to %s", properties.reply_to)
                 yield self.publish(exchange=exchange,
                                    routing_key=properties.reply_to,
-                                   properties=BasicProperties(correlation_id=properties.correlation_id),
+                                   properties=BasicProperties(correlation_id=properties.correlation_id, delivery_mode=2),
                                    body=str(result))
         except Exception:
             import traceback
