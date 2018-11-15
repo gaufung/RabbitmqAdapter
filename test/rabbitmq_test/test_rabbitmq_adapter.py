@@ -6,7 +6,7 @@ import uuid
 
 import pika
 from pika import BasicProperties
-from tornado.gen import coroutine, Return
+from tornado.gen import coroutine, Return, sleep
 from tornado.queues import Queue
 from tornado.testing import AsyncTestCase, gen_test
 
@@ -66,6 +66,17 @@ class TestTornadoAdapterPublish(AsyncTestCase):
         self.assertEqual(actual, "Nice to meet you!")
         actual = yield self._result_queue.get()
         self.assertEqual(actual, "Nice to meet you too!")
+
+    @unittest.skip("need to be durable queue. but it deletes queue after each test case.")
+    @gen_test(timeout=10)
+    def test_persistence_publish(self):
+        message = "hello persistence"
+        yield self._adapter.publish(self.exchange, "adapter.advance", message)
+        yield sleep(0.5)
+        yield self._adapter.receive(self.exchange, self.routing_key, self.queue,
+                                    functools.partial(self._process, back_value=True))
+        actual = yield self._result_queue.get()
+        self.assertEqual(actual, message)
 
 
 class TestTornadoAdapterRpc(AsyncTestCase):
