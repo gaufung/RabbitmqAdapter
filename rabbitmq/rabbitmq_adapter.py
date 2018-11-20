@@ -1,16 +1,16 @@
 # -*- encoding:utf-8 -*-
+import datetime
 import functools
 import logging
 import uuid
 import warnings
-import sys
-import datetime
-from pika import URLParameters, ConnectionParameters, BlockingConnection
-from pika import TornadoConnection
+
 from pika import BasicProperties
-from tornado.ioloop import IOLoop
-from tornado.concurrent import Future
+from pika import TornadoConnection
+from pika import URLParameters, ConnectionParameters, BlockingConnection
 from tornado import gen
+from tornado.concurrent import Future
+from tornado.ioloop import IOLoop
 from tornado.queues import Queue
 
 
@@ -140,8 +140,6 @@ class SyncRabbitMQProducer(object):
 
 
 class _AsyncConnection(object):
-    _NORMAL_CLOSE_CODE = 200  # connection or channel closes normally
-
     INIT_STATUS = "init"
     CONNECTING_STATUS = "connecting"
     OPEN_STATUS = "open"
@@ -171,9 +169,14 @@ class _AsyncConnection(object):
         conn = yield self._top()
         raise gen.Return(conn)
 
+    def _on_timeout(self):
+        if self._current_status == self.CONNECTING_STATUS:
+            self._current_status = self.CLOSE_STATUS
+
     @gen.coroutine
     def _connect(self):
         try:
+            self._io_loop.add_timeout(datetime.timedelta(seconds=10), self._on_timeout)
             connection = yield self._try_connect()
             if connection is not None:
                 self._queue.put(connection)
@@ -214,7 +217,6 @@ class _AsyncConnection(object):
 
 
 class TornadoAdapter(object):
-    _EXIST_CODE = 1  # system exist code
     _NORMAL_CLOSE_CODE = 200  # connection or channel closes normally
     """
     If channel closing is initiated by user (either directly of indirectly by closing a 
@@ -369,7 +371,7 @@ class TornadoAdapter(object):
         self.logger.info("[receive] exchange: %s; routing key: %s; queue name: %s", exchange, routing_key, queue_name)
         try:
             channel = yield self._create_channel(conn)
-            yield self._queue_declare(channel, queue=queue_name, auto_delete=False)
+            yield self._queue_declare(channel, queue=queue_name, auto_delete=False, durable=True)
             if routing_key != "":
                 yield self._exchange_declare(channel, exchange=exchange)
                 yield self._queue_bind(channel, exchange=exchange, queue=queue_name, routing_key=routing_key)
@@ -397,8 +399,7 @@ class TornadoAdapter(object):
                 self.logger.info("sending result back to %s", properties.reply_to)
                 yield self.publish(exchange=exchange,
                                    routing_key=properties.reply_to,
-                                   properties=BasicProperties(correlation_id=properties.correlation_id,
-                                                              delivery_mode=2),
+                                   properties=BasicProperties(correlation_id=properties.correlation_id),
                                    body=str(result))
         except Exception:
             import traceback
@@ -429,12 +430,11 @@ class TornadoAdapter(object):
                 yield self._rpc_exchange_dict[exchange].put(callback_queue)
             callback_queue = yield self._rpc_exchange_dict[exchange].get()
             yield self._rpc_exchange_dict[exchange].put(callback_queue)
-            self.logger.info("starting call ")
+            self.logger.info("starting rpc calling ")
             corr_id = str(uuid.uuid1())
             yield self.publish(exchange, routing_key, body,
                                properties=BasicProperties(correlation_id=corr_id,
-                                                          reply_to=callback_queue,
-                                                          delivery_mode=2))
+                                                          reply_to=callback_queue))
             result = yield self._wait_result(corr_id, timeout)
             if corr_id in self._rpc_corr_id_dict:
                 del self._rpc_corr_id_dict[corr_id]
