@@ -28,7 +28,6 @@ class TestTornadoAdapterPublish(AsyncTestCase):
 
     def tearDown(self):
         self._delete_queues(self.queue)
-        self._adapter.close()
         super(TestTornadoAdapterPublish, self).tearDown()
 
     def _delete_queues(self, *queues):
@@ -61,7 +60,7 @@ class TestTornadoAdapterPublish(AsyncTestCase):
         yield self._adapter.receive(self.exchange, reply_to, reply_to,
                                     functools.partial(self._process, back_value=True))
         yield self._adapter.publish(self.exchange, "adapter.two", "Nice to meet you!",
-                                             properties=BasicProperties(correlation_id=corr_id, reply_to=reply_to))
+                                    properties=BasicProperties(correlation_id=corr_id, reply_to=reply_to))
         actual = yield self._result_queue.get()
         self.assertEqual(actual, "Nice to meet you!")
         actual = yield self._result_queue.get()
@@ -103,14 +102,14 @@ class TestTornadoAdapterRpc(AsyncTestCase):
     @gen_test(timeout=20)
     def test_rpc_call(self):
         yield self._adapter.receive(self._exchange, self._routing_key, self._queue, self.fib)
-        value = yield self._adapter.rpc(self._exchange,"fib.call", "10")
+        value = yield self._adapter.rpc(self._exchange, "fib.call", "10")
         self.assertEqual(str(self._fib(10)), value)
 
     @gen_test(timeout=20)
     def test_rpc_calls(self):
         yield self._adapter.receive(self._exchange, self._routing_key, self._queue, self.fib)
         size = 20
-        values =[random.randint(10, 20) for _ in range(size)]
+        values = [random.randint(10, 20) for _ in range(size)]
         expect_values = [str(self._fib(value)) for value in values]
         actual_values = yield [
             self._adapter.rpc(self._exchange, "fib.%d" % value, str(value)) for value in values
@@ -128,7 +127,6 @@ class TestTornadoAdapterRpc(AsyncTestCase):
 
     def tearDown(self):
         self._delete_queues(self._queue)
-        self._adapter.close()
         super(TestTornadoAdapterRpc, self).tearDown()
 
     def _delete_queues(self, *queues):
@@ -148,7 +146,7 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
         self.exchange = "sync_exchange"
         self.routing_key = "sync.*"
         self.queue = "sync_queue"
-        
+
     def tearDown(self):
         self._delete_queues(self.queue)
         self._adapter.close()
@@ -160,7 +158,6 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
         for queue in queues:
             channel.queue_delete(queue)
         connection.close()
-        
 
     @coroutine
     def _process(self, body, back_value):
@@ -173,7 +170,7 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
         with self.assertRaises(RabbitMQError):
             p.publish(self.exchange, "sync.dog", "nice to meet you")
         with self.assertRaises(RabbitMQError):
-            p.publish_messages(self.exchange, {'sync.cat':"A cat","sync.dog":"A dog"})
+            p.publish_messages(self.exchange, {'sync.cat': "A cat", "sync.dog": "A dog"})
         p.connect()
         with self.assertRaises(RabbitMQError):
             p.publish_messages(self.exchange, ["sync.cat", "A cat"])
@@ -204,7 +201,7 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
                 self.assertTrue(value in result_set)
         p = SyncRabbitMQProducer(self._url)
         p.connect()
-        p.publish_messages(self.exchange, {'sync.cat': "A cat","sync.dog": "A dog"})
+        p.publish_messages(self.exchange, {'sync.cat': "A cat", "sync.dog": "A dog"})
         result_set = set(["A cat", "A dog"])
         for i in range(2):
             value = yield self._result_queue.get()

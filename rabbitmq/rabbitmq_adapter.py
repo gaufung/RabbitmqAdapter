@@ -45,6 +45,7 @@ class SyncRabbitMQProducer(object):
         with SyncAMQPProducer("127.0.0.1") as p:
             p.publish("exchange_name", "dog.black", "message1", "message2")
     """
+
     def __init__(self, rabbitmq_url):
         """
 
@@ -133,8 +134,83 @@ class SyncRabbitMQProducer(object):
         This is method doesn't recommend. using `with` context instead
         :return: None
         """
-        warnings.warn("Call disconnect() method, using `with` context instead.", category=DeprecationWarning, stacklevel=2)
+        warnings.warn("Call disconnect() method, using `with` context instead.", category=DeprecationWarning,
+                      stacklevel=2)
         self._disconnect()
+
+
+class _AsyncConnection(object):
+    _NORMAL_CLOSE_CODE = 200  # connection or channel closes normally
+
+    INIT_STATUS = "init"
+    CONNECTING_STATUS = "connecting"
+    OPEN_STATUS = "open"
+    CLOSE_STATUS = "close"
+
+    def __init__(self, rabbitmq_url, io_loop):
+        self._parameter = ConnectionParameters("127.0.0.1") if rabbitmq_url in ["localhost", "127.0.0.1"] else \
+            URLParameters(rabbitmq_url)
+        self._io_loop = io_loop
+        self._logger = logging.getLogger(__name__)
+        self._queue = Queue(maxsize=1)
+        self._current_status = self.INIT_STATUS
+
+    @property
+    def logger(self):
+        return self._logger
+
+    @property
+    def status(self):
+        return self._current_status
+
+    @gen.coroutine
+    def get_connection(self):
+        if self._current_status == self.INIT_STATUS:
+            self._current_status = self.CONNECTING_STATUS
+            yield self._connect()
+        conn = yield self._top()
+        raise gen.Return(conn)
+
+    @gen.coroutine
+    def _connect(self):
+        try:
+            connection = yield self._try_connect()
+            if connection is not None:
+                self._queue.put(connection)
+        except Exception as e:
+            self.logger.error("failed to connect rabbitmq. %s", e)
+
+    @gen.coroutine
+    def _top(self):
+        conn = yield self._queue.get()
+        self._queue.put(conn)
+        raise gen.Return(conn)
+
+    def _try_connect(self):
+        self.logger.info("creating connection")
+        future = Future()
+
+        def open_callback(unused_connection):
+            self.logger.info("created connection")
+            self._current_status = self.OPEN_STATUS
+            future.set_result(unused_connection)
+
+        def open_error_callback(connection, exception):
+            self.logger.error("open connection with error: %s", exception)
+            self._current_status = self.CLOSE_STATUS
+            future.set_exception(exception)
+
+        def close_callback(connection, reply_code, reply_text):
+            self.logger.error("closing connection: reply code:%s, reply_text: %s. system will exist",
+                              reply_code, reply_text)
+            self._current_status = self.CLOSE_STATUS
+
+        TornadoConnection(self._parameter,
+                          on_open_callback=open_callback,
+                          on_open_error_callback=open_error_callback,
+                          on_close_callback=close_callback,
+                          custom_ioloop=self._io_loop)
+        return future
 
 
 class TornadoAdapter(object):
@@ -170,14 +246,14 @@ class TornadoAdapter(object):
         """
         self._parameter = ConnectionParameters("127.0.0.1") if rabbitmq_url in ["localhost", "127.0.0.1"] else \
             URLParameters(rabbitmq_url)
-        self._logger = logging.getLogger(__name__)
-        self._publish_connection = None
-        self._receive_connection = None
-        self._rpc_exchange_dict = dict()
-        self._rpc_corr_id_dict = dict()
         if io_loop is None:
             io_loop = IOLoop.current()
         self._io_loop = io_loop
+        self._logger = logging.getLogger(__name__)
+        self._publish_conn = _AsyncConnection(rabbitmq_url, io_loop)
+        self._receive_conn = _AsyncConnection(rabbitmq_url, io_loop)
+        self._rpc_exchange_dict = dict()
+        self._rpc_corr_id_dict = dict()
 
     @gen.coroutine
     def connect(self):
@@ -188,27 +264,7 @@ class TornadoAdapter(object):
         warnings.warn("Calling connect() method is unnecessary. "
                       "Call `publish`, `receive` and `rpc` methods straightly. ",
                       category=DeprecationWarning, stacklevel=2)
-        self._publish_connection = yield self._create_connection(self._parameter)
-        self._receive_connection = yield self._create_connection(self._parameter)
         raise gen.Return(True)
-
-    @gen.coroutine
-    def _try_connect_publish_connection(self):
-        try:
-            if self._publish_connection is None or not self._publish_connection.is_open:
-                self._publish_connection = yield self._create_connection(self._parameter)
-        except Exception as e:
-            self.logger.error("failed to create connection. %s", e.message)
-            raise RabbitMQConnectError("failed to create connection")
-
-    @gen.coroutine
-    def _try_connect_receive_connections(self):
-        try:
-            if self._receive_connection is None or not self._receive_connection.is_open:
-                self._receive_connection = yield self._create_connection(self._parameter)
-        except Exception as e:
-            self.logger.error("failed to create connection. %s", e.message)
-            raise RabbitMQConnectError("failed to create connection")
 
     @property
     def logger(self):
@@ -218,31 +274,6 @@ class TornadoAdapter(object):
         """
         return self._logger
 
-    def _create_connection(self, parameter):
-        self.logger.info("creating connection")
-        future = Future()
-
-        def open_callback(unused_connection):
-            self.logger.info("created connection")
-            future.set_result(unused_connection)
-
-        def open_error_callback(connection, exception):
-            self.logger.error("open connection with error: %s", exception)
-            future.set_exception(exception)
-
-        def close_callback(connection, reply_code, reply_text):
-            if reply_code not in [self._NORMAL_CLOSE_CODE,]:
-                self.logger.error("closing connection: reply code:%s, reply_text: %s. system will exist",
-                                  reply_code, reply_text)
-                sys.exit(self._EXIST_CODE)
-
-        TornadoConnection(parameter,
-                          on_open_callback=open_callback,
-                          on_open_error_callback=open_error_callback,
-                          on_close_callback=close_callback,
-                          custom_ioloop=self._io_loop)
-        return future
-
     def _create_channel(self, connection):
         self.logger.info("creating channel")
         future = Future()
@@ -251,7 +282,7 @@ class TornadoAdapter(object):
             if reply_code not in [self._NORMAL_CLOSE_CODE, self._USER_CLOSE_CODE]:
                 self.logger.error("channel closed. reply code: %s; reply text: %s. system will exist"
                                   , reply_code, reply_txt)
-                sys.exit(self._EXIST_CODE)
+                connection.close()
 
         def open_callback(channel):
             self.logger.info("created channel")
@@ -269,7 +300,7 @@ class TornadoAdapter(object):
             self.logger.info("declared exchange: %s", exchange)
             future.set_result(unframe)
 
-        channel.exchange_declare(callback=callback, durable=True,
+        channel.exchange_declare(callback=callback,
                                  exchange=exchange, exchange_type=exchange_type, **kwargs)
         return future
 
@@ -281,7 +312,7 @@ class TornadoAdapter(object):
             self.logger.info("declared queue: %s", method_frame.method.queue)
             future.set_result(method_frame.method.queue)
 
-        channel.queue_declare(callback=callback, queue=queue, durable=True, **kwargs)
+        channel.queue_declare(callback=callback, queue=queue, **kwargs)
         return future
 
     def _queue_bind(self, channel, queue, exchange, routing_key=None, **kwargs):
@@ -291,6 +322,7 @@ class TornadoAdapter(object):
         def callback(unframe):
             self.logger.info("bound queue: %s to exchange: %s", queue, exchange)
             future.set_result(unframe)
+
         channel.queue_bind(callback, queue=queue, exchange=exchange, routing_key=routing_key, **kwargs)
         return future
 
@@ -306,16 +338,16 @@ class TornadoAdapter(object):
         :param properties: properties
         :return: None
         """
-        yield self._try_connect_publish_connection()
+        conn = yield self._publish_conn.get_connection()
         self.logger.info("preparing to publish. exchange: %s; routing_key: %s", exchange, routing_key)
         try:
-            channel = yield self._create_channel(self._publish_connection)
+            channel = yield self._create_channel(conn)
             if properties is None:
                 properties = BasicProperties(delivery_mode=2)
             channel.basic_publish(exchange=exchange, routing_key=routing_key, body=body, properties=properties)
             channel.close()
         except Exception as e:
-            self.logger.error("failed to publish message. %s",  e.message)
+            self.logger.error("failed to publish message. %s", e.message)
             raise RabbitMQPublishError("failed to publish message")
 
     @gen.coroutine
@@ -333,10 +365,10 @@ class TornadoAdapter(object):
         :param prefetch_count: prefetch count
         :return: None
         """
-        yield self._try_connect_receive_connections()
+        conn = yield self._receive_conn.get_connection()
         self.logger.info("[receive] exchange: %s; routing key: %s; queue name: %s", exchange, routing_key, queue_name)
         try:
-            channel = yield self._create_channel(self._receive_connection)
+            channel = yield self._create_channel(conn)
             yield self._queue_declare(channel, queue=queue_name, auto_delete=False)
             if routing_key != "":
                 yield self._exchange_declare(channel, exchange=exchange)
@@ -365,7 +397,8 @@ class TornadoAdapter(object):
                 self.logger.info("sending result back to %s", properties.reply_to)
                 yield self.publish(exchange=exchange,
                                    routing_key=properties.reply_to,
-                                   properties=BasicProperties(correlation_id=properties.correlation_id, delivery_mode=2),
+                                   properties=BasicProperties(correlation_id=properties.correlation_id,
+                                                              delivery_mode=2),
                                    body=str(result))
         except Exception:
             import traceback
@@ -387,19 +420,21 @@ class TornadoAdapter(object):
         :param timeout: timeout
         :return: result or Exception("timeout")
         """
-        yield self._try_connect_receive_connections()
+        conn = yield self._receive_conn.get_connection()
         self.logger.info("preparing to rpc call. exchange: %s; routing key: %s", exchange, routing_key)
         try:
             if exchange not in self._rpc_exchange_dict:
                 self._rpc_exchange_dict[exchange] = Queue(maxsize=1)
-                callback_queue = yield self._initialize_rpc_callback(exchange)
+                callback_queue = yield self._initialize_rpc_callback(exchange, conn)
                 yield self._rpc_exchange_dict[exchange].put(callback_queue)
             callback_queue = yield self._rpc_exchange_dict[exchange].get()
             yield self._rpc_exchange_dict[exchange].put(callback_queue)
             self.logger.info("starting call ")
             corr_id = str(uuid.uuid1())
             yield self.publish(exchange, routing_key, body,
-                               properties=BasicProperties(correlation_id=corr_id, reply_to=callback_queue))
+                               properties=BasicProperties(correlation_id=corr_id,
+                                                          reply_to=callback_queue,
+                                                          delivery_mode=2))
             result = yield self._wait_result(corr_id, timeout)
             if corr_id in self._rpc_corr_id_dict:
                 del self._rpc_corr_id_dict[corr_id]
@@ -411,9 +446,9 @@ class TornadoAdapter(object):
             raise RabbitMQRpcError("failed to rpc call")
 
     @gen.coroutine
-    def _initialize_rpc_callback(self, exchange):
+    def _initialize_rpc_callback(self, exchange, conn):
         self.logger.info("initialize rpc callback queue")
-        rpc_channel = yield self._create_channel(self._receive_connection)
+        rpc_channel = yield self._create_channel(conn)
         callback_queue = yield self._queue_declare(rpc_channel, auto_delete=True)
         self.logger.info("callback queue: %s", callback_queue)
         if exchange != "":
@@ -441,22 +476,9 @@ class TornadoAdapter(object):
             self._io_loop.add_timeout(datetime.timedelta(seconds=timeout), on_timeout)
         return future
 
-    def close(self):
-        if self._publish_connection is not None and self._publish_connection.is_open:
-            self._publish_connection.close()
-        if self._receive_connection is not None and self._receive_connection.is_open:
-            self._receive_connection.close()
-
-    def status(self):
-        """
-        to check tornado adapter connection status.
-        if `publish connection` is not None. whether it's open or not;
-        if `receive connection` is not None. whether it's open or not.
-        """
-        if self._publish_connection is not None:
-            if not self._publish_connection.is_open:
-                return False
-        if self._receive_connection is not None:
-            if not self._receive_connection.is_open:
-                return False
+    def status_check(self):
+        if self._publish_conn.status == _AsyncConnection.CLOSE_STATUS:
+            return False
+        if self._receive_conn.status == _AsyncConnection.CLOSE_STATUS:
+            return False
         return True
