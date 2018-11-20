@@ -144,11 +144,13 @@ class _AsyncConnection(object):
     CONNECTING_STATUS = "connecting"
     OPEN_STATUS = "open"
     CLOSE_STATUS = "close"
+    TIMEOUT_STATUS = 'timeout'
 
-    def __init__(self, rabbitmq_url, io_loop):
+    def __init__(self, rabbitmq_url, io_loop, timeout=10):
         self._parameter = ConnectionParameters("127.0.0.1") if rabbitmq_url in ["localhost", "127.0.0.1"] else \
             URLParameters(rabbitmq_url)
         self._io_loop = io_loop
+        self._timeout = timeout
         self._logger = logging.getLogger(__name__)
         self._queue = Queue(maxsize=1)
         self._current_status = self.INIT_STATUS
@@ -158,8 +160,9 @@ class _AsyncConnection(object):
         return self._logger
 
     @property
-    def status(self):
-        return self._current_status
+    def status_ok(self):
+        return self._current_status != self.CLOSE_STATUS \
+               and self._current_status != self.TIMEOUT_STATUS
 
     @gen.coroutine
     def get_connection(self):
@@ -169,14 +172,9 @@ class _AsyncConnection(object):
         conn = yield self._top()
         raise gen.Return(conn)
 
-    def _on_timeout(self):
-        if self._current_status == self.CONNECTING_STATUS:
-            self._current_status = self.CLOSE_STATUS
-
     @gen.coroutine
     def _connect(self):
         try:
-            self._io_loop.add_timeout(datetime.timedelta(seconds=10), self._on_timeout)
             connection = yield self._try_connect()
             if connection is not None:
                 self._queue.put(connection)
@@ -189,8 +187,14 @@ class _AsyncConnection(object):
         self._queue.put(conn)
         raise gen.Return(conn)
 
+    def _on_timeout(self):
+        if self._current_status == self.CONNECTING_STATUS:
+            self.logger.error("creating connection time out")
+            self._current_status = self.TIMEOUT_STATUS
+
     def _try_connect(self):
         self.logger.info("creating connection")
+        self._io_loop.add_timeout(datetime.timedelta(seconds=self._timeout), self._on_timeout)
         future = Future()
 
         def open_callback(unused_connection):
@@ -477,8 +481,4 @@ class TornadoAdapter(object):
         return future
 
     def status_check(self):
-        if self._publish_conn.status == _AsyncConnection.CLOSE_STATUS:
-            return False
-        if self._receive_conn.status == _AsyncConnection.CLOSE_STATUS:
-            return False
-        return True
+        return self._receive_conn.status_ok and self._publish_conn.status_ok
