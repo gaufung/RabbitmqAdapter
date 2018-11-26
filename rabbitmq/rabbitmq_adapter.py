@@ -230,6 +230,8 @@ class TornadoAdapter(object):
     """
     _USER_CLOSE_CODE = 0
 
+    _NO_ROUTE_CODE = 312
+
     def __init__(self, rabbitmq_url, io_loop=None):
         """
         A Rabbitmq client, using tornado to complete asynchronous invoking.
@@ -286,13 +288,22 @@ class TornadoAdapter(object):
 
         def on_channel_closed(channel, reply_code, reply_txt):
             if reply_code not in [self._NORMAL_CLOSE_CODE, self._USER_CLOSE_CODE]:
-                self.logger.error("channel closed. reply code: %s; reply text: %s. system will exist"
+                self.logger.error("channel closed. reply code: %d; reply text: %s. system will exist"
                                   , reply_code, reply_txt)
                 connection.close()
+            else:
+                self.logger.info("reply code %s, reply txt: %s", reply_code, reply_txt)
+
+        def on_channel_return(channel, method, property, body):
+            if method.reply_code == self._NO_ROUTE_CODE:
+                self.logger.error("return from server. reply code: %d, reply text: %s",
+                                  method.reply_code, method.reply_text)
+                raise Exception("sending unrouted message")
 
         def open_callback(channel):
             self.logger.info("created channel")
             channel.add_on_close_callback(on_channel_closed)
+            channel.add_on_return_callback(on_channel_return)
             future.set_result(channel)
 
         connection.channel(on_open_callback=open_callback)
@@ -333,7 +344,7 @@ class TornadoAdapter(object):
         return future
 
     @gen.coroutine
-    def publish(self, exchange, routing_key, body, properties=None):
+    def publish(self, exchange, routing_key, body, properties=None, mandatory=True):
         """
         publish message. creating a brand new channel once invoke this method. After publishing, it closes the
         channel.
@@ -342,19 +353,23 @@ class TornadoAdapter(object):
         :param routing_key: routing key (e.g. dog.yellow, cat.big)
         :param body: message
         :param properties: properties
+        :param mandatory: whether
         :return: None
         """
         conn = yield self._publish_conn.get_connection()
         self.logger.info("preparing to publish. exchange: %s; routing_key: %s", exchange, routing_key)
+        channel = yield self._create_channel(conn)
         try:
-            channel = yield self._create_channel(conn)
             if properties is None:
                 properties = BasicProperties(delivery_mode=2)
-            channel.basic_publish(exchange=exchange, routing_key=routing_key, body=body, properties=properties)
-            channel.close()
+            channel.basic_publish(exchange=exchange, routing_key=routing_key, body=body,
+                                  mandatory=mandatory, properties=properties)
         except Exception as e:
             self.logger.error("failed to publish message. %s", e.message)
             raise RabbitMQPublishError("failed to publish message")
+        finally:
+            self.logger.info("closing channel")
+            channel.close()
 
     @gen.coroutine
     def receive(self, exchange, routing_key, queue_name, handler, no_ack=False, prefetch_count=0):
@@ -404,7 +419,7 @@ class TornadoAdapter(object):
                 yield self.publish(exchange=exchange,
                                    routing_key=properties.reply_to,
                                    properties=BasicProperties(correlation_id=properties.correlation_id),
-                                   body=str(result))
+                                   body=str(result), mandatory=False)
         except Exception:
             import traceback
             self.logger.error(traceback.format_exc())
@@ -438,7 +453,8 @@ class TornadoAdapter(object):
             corr_id = str(uuid.uuid1())
             yield self.publish(exchange, routing_key, body,
                                properties=BasicProperties(correlation_id=corr_id,
-                                                          reply_to=callback_queue))
+                                                          reply_to=callback_queue),
+                               mandatory=True)
             result = yield self._wait_result(corr_id, timeout)
             if corr_id in self._rpc_corr_id_dict:
                 del self._rpc_corr_id_dict[corr_id]
