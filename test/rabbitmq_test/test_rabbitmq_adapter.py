@@ -170,7 +170,8 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
         with self.assertRaises(RabbitMQError):
             p.publish(self.exchange, "sync.dog", "nice to meet you")
         with self.assertRaises(RabbitMQError):
-            p.publish_messages(self.exchange, {'sync.cat': "A cat", "sync.dog": "A dog"})
+            p.publish_messages(
+                self.exchange, {'sync.cat': "A cat", "sync.dog": "A dog"})
         p.connect()
         with self.assertRaises(RabbitMQError):
             p.publish_messages(self.exchange, ["sync.cat", "A cat"])
@@ -194,14 +195,17 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
         yield self._adapter.receive(self.exchange, self.routing_key, self.queue,
                                     functools.partial(self._process, back_value=True))
         with SyncRabbitMQProducer(self._url) as p:
-            p.publish(self.exchange, "sync.dog", "A big dog", "A small dog", "A tiny dog", "A tough dog")
-            result_set = set(["A big dog", "A small dog", "A tiny dog", "A tough dog"])
+            p.publish(self.exchange, "sync.dog", "A big dog",
+                      "A small dog", "A tiny dog", "A tough dog")
+            result_set = set(["A big dog", "A small dog",
+                              "A tiny dog", "A tough dog"])
             for i in range(4):
                 value = yield self._result_queue.get()
                 self.assertTrue(value in result_set)
         p = SyncRabbitMQProducer(self._url)
         p.connect()
-        p.publish_messages(self.exchange, {'sync.cat': "A cat", "sync.dog": "A dog"})
+        p.publish_messages(
+            self.exchange, {'sync.cat': "A cat", "sync.dog": "A dog"})
         result_set = set(["A cat", "A dog"])
         for i in range(2):
             value = yield self._result_queue.get()
