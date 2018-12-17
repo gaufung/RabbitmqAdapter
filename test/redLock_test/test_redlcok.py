@@ -3,6 +3,7 @@ import unittest
 
 import redis
 from redlock import RedLock, RedLockError
+import time
 
 
 class TestRedLock(unittest.TestCase):
@@ -60,6 +61,23 @@ class TestRedLock(unittest.TestCase):
         self.assertTrue(result)
         locker3.release()
         locker1.release()
+
+    def test_lock_with_ttl(self):
+        resource = "TTLResource"
+        conn1 = redis.StrictRedis(host=self._host,
+                                  port=self._port,
+                                  password=self._password,
+                                  db=11)
+        locker1 = RedLock(resource=resource,
+                          connections=[conn1],
+                          ttl=500)
+        result = locker1.acquire()
+        self.assertTrue(result)
+        time.sleep(1)
+        locker2 = RedLock(resource, [conn1])
+        result = locker2.acquire()
+        self.assertTrue(result)
+        locker2.release()
 
 
 if __name__ == "__main__":
