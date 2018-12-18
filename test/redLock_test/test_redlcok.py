@@ -2,7 +2,7 @@
 import unittest
 
 import redis
-from redlock import RedLock, RedLockError
+from common.redlock import RedLock, RedLockError
 import time
 
 

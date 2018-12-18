@@ -1,2 +1,2 @@
 # -*- encoding:utf-8 -*-
-from redlock.lock import RedLock, RedLockError
+from common.redlock.lock import RedLock, RedLockError
