@@ -1,5 +1,5 @@
 # -*- encoding:utf-8 -*-
-from common.rabbitmq.rabbitmq_adapter import SyncRabbitMQProducer, TornadoAdapter
-from common.rabbitmq.rabbitmq_adapter import RabbitMQError, RabbitMQReceiveError, \
+from .rabbitmq_adapter import SyncRabbitMQProducer, TornadoAdapter
+from .rabbitmq_adapter import RabbitMQError, RabbitMQReceiveError, \
     RabbitMQRpcError, RabbitMQPublishError, RabbitMQTimeoutError, RabbitMQConnectError
-from common.rabbitmq.rabbitmq_metrics import RabbitMQMetrics
+from .rabbitmq_metrics import RabbitMQMetrics
