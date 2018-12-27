@@ -156,5 +156,3 @@ class AsyncThreadPool(object):
     def shutdown(self, wait=True):
         self._pool.shutdown(wait)
 
-    def shutdownNow(self, wait=True):
-        self._pool.shutdown(wait)
