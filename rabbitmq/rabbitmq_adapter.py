@@ -282,7 +282,7 @@ class TornadoAdapter(object):
         """
         return self._logger
 
-    def _create_channel(self, connection):
+    def _create_channel(self, connection, callback=None):
         self.logger.info("creating channel")
         future = Future()
 
@@ -294,11 +294,12 @@ class TornadoAdapter(object):
             else:
                 self.logger.info("reply code %s, reply txt: %s", reply_code, reply_txt)
 
+        # if publish message failed, it will invoke this method.
         def on_channel_return(channel, method, property, body):
-            if method.reply_code == self._NO_ROUTE_CODE:
                 self.logger.error("return from server. reply code: %d, reply text: %s",
                                   method.reply_code, method.reply_text)
-                raise Exception("sending unrouted message")
+                if callback is not None:
+                    callback()
 
         def open_callback(channel):
             self.logger.info("created channel")
@@ -344,7 +345,7 @@ class TornadoAdapter(object):
         return future
 
     @gen.coroutine
-    def publish(self, exchange, routing_key, body, properties=None, mandatory=True):
+    def publish(self, exchange, routing_key, body, properties=None, mandatory=True, callback=None):
         """
         publish message. creating a brand new channel once invoke this method. After publishing, it closes the
         channel.
@@ -358,7 +359,7 @@ class TornadoAdapter(object):
         """
         conn = yield self._publish_conn.get_connection()
         self.logger.info("preparing to publish. exchange: %s; routing_key: %s", exchange, routing_key)
-        channel = yield self._create_channel(conn)
+        channel = yield self._create_channel(conn, callback)
         try:
             if properties is None:
                 properties = BasicProperties(delivery_mode=2)
