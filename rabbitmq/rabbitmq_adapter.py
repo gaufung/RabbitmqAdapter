@@ -300,6 +300,8 @@ class TornadoAdapter(object):
                                   method.reply_code, method.reply_text)
                 if callback is not None:
                     callback()
+                else:
+                    raise Exception("failed to publish message")
 
         def open_callback(channel):
             self.logger.info("created channel")
