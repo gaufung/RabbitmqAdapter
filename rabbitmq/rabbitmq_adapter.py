@@ -282,7 +282,7 @@ class TornadoAdapter(object):
         """
         return self._logger
 
-    def _create_channel(self, connection, callback=None):
+    def _create_channel(self, connection, return_callback=None):
         self.logger.info("creating channel")
         future = Future()
 
@@ -296,12 +296,15 @@ class TornadoAdapter(object):
 
         # if publish message failed, it will invoke this method.
         def on_channel_return(channel, method, property, body):
-                self.logger.error("return from server. reply code: %d, reply text: %s",
-                                  method.reply_code, method.reply_text)
-                if callback is not None:
-                    callback()
+                self.logger.error("reject from server. reply code: %d, reply text: %s. body: %s",
+                                  method.reply_code, method.reply_text, body)
+                if return_callback is not None:
+                    if hasattr(return_callback, "__tornado_coroutine__"):
+                        self._io_loop.spawn_callback(return_callback)
+                    else:
+                        return_callback()
                 else:
-                    raise Exception("failed to publish message")
+                    raise Exception("failed to publish message. message: %s" % str(body))
 
         def open_callback(channel):
             self.logger.info("created channel")
@@ -347,7 +350,8 @@ class TornadoAdapter(object):
         return future
 
     @gen.coroutine
-    def publish(self, exchange, routing_key, body, properties=None, mandatory=True, callback=None):
+    def publish(self, exchange, routing_key, body,
+                properties=None,  mandatory=True, return_callback=None):
         """
         publish message. creating a brand new channel once invoke this method. After publishing, it closes the
         channel.
@@ -357,11 +361,12 @@ class TornadoAdapter(object):
         :param body: message
         :param properties: properties
         :param mandatory: whether
+        :param return_callback: failed callback
         :return: None
         """
         conn = yield self._publish_conn.get_connection()
         self.logger.info("preparing to publish. exchange: %s; routing_key: %s", exchange, routing_key)
-        channel = yield self._create_channel(conn, callback)
+        channel = yield self._create_channel(conn, return_callback)
         try:
             if properties is None:
                 properties = BasicProperties(delivery_mode=2)

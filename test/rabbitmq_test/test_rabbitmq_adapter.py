@@ -51,6 +51,20 @@ class TestTornadoAdapterPublish(AsyncTestCase):
         actual = yield self._result_queue.get()
         self.assertEqual(actual, expect_body)
 
+    def return_callback(self, queue):
+        @coroutine
+        def back():
+            yield queue.put("failed")
+        return back
+
+    @gen_test(timeout=5)
+    def test_fail_publish(self):
+        queue = Queue(maxsize=1)
+        yield self._adapter.publish(self.exchange, "non_routing_key.test", "hello",
+                                    return_callback=self.return_callback(queue))
+        value = yield queue.get()
+        self.assertEqual(value, "failed")
+
     @gen_test(timeout=5)
     def test_publish_with_reply(self):
         corr_id = str(uuid.uuid4())
@@ -149,7 +163,6 @@ class TestSyncRabbitMQProducer(AsyncTestCase):
 
     def tearDown(self):
         self._delete_queues(self.queue)
-        self._adapter.close()
         super(TestSyncRabbitMQProducer, self).tearDown()
 
     def _delete_queues(self, *queues):
