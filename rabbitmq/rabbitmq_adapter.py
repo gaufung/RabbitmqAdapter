@@ -296,15 +296,15 @@ class TornadoAdapter(object):
 
         # if publish message failed, it will invoke this method.
         def on_channel_return(channel, method, property, body):
-                self.logger.error("reject from server. reply code: %d, reply text: %s. body: %s",
-                                  method.reply_code, method.reply_text, body)
+                self.logger.error("reject from server. reply code: %d, reply text: %s.",
+                                  method.reply_code, method.reply_text)
                 if return_callback is not None:
                     if hasattr(return_callback, "__tornado_coroutine__"):
                         self._io_loop.spawn_callback(return_callback)
                     else:
                         return_callback()
                 else:
-                    raise Exception("failed to publish message. message: %s" % str(body))
+                    raise Exception("failed to publish message.")
 
         def open_callback(channel):
             self.logger.info("created channel")
