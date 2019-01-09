@@ -194,10 +194,5 @@ class _SystemResourceThread(threading.Thread):
     def start(self):
         super(_SystemResourceThread, self).start()
 
-        def on_terminate():
-            self.terminate()
-            self.join()
-        signal.signal(signal.SIGTERM, on_terminate)
-
 
 system_monitor = _SystemResourceThread()
