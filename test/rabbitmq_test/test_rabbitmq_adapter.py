@@ -141,7 +141,13 @@ class TestTornadoAdapterRpc(AsyncTestCase):
 
     def tearDown(self):
         self._delete_queues(self._queue)
+        for t in EXECUTOR._pool._threads:
+            self._stop_thread(t)
         super(TestTornadoAdapterRpc, self).tearDown()
+
+    def _stop_thread(self, t):
+        if t.is_alive():
+            t._Thread__stop()
 
     def _delete_queues(self, *queues):
         connection = pika.BlockingConnection(pika.URLParameters(self._url))
