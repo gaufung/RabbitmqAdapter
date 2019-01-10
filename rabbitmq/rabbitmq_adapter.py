@@ -187,15 +187,17 @@ class _AsyncConnection(object):
         self._queue.put(conn)
         raise gen.Return(conn)
 
-    def _on_timeout(self):
+    def _on_timeout(self, future):
         if self._current_status == self.CONNECTING_STATUS:
             self.logger.error("creating connection time out")
             self._current_status = self.TIMEOUT_STATUS
+            future.set_exception(Exception("connection Timeout"))
 
     def _try_connect(self):
         self.logger.info("creating connection")
-        self._io_loop.add_timeout(datetime.timedelta(seconds=self._timeout), self._on_timeout)
         future = Future()
+        self._io_loop.add_timeout(datetime.timedelta(seconds=self._timeout),
+                                  functools.partial(self._on_timeout, future=future))
 
         def open_callback(unused_connection):
             self.logger.info("created connection")
