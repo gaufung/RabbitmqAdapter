@@ -472,7 +472,7 @@ class TornadoAdapter(object):
             unused_channel.basic_ack(basic_deliver.delivery_tag)
 
     @gen.coroutine
-    def rpc(self, exchange, routing_key, body, timeout=None,
+    def rpc(self, exchange, routing_key, body, timeout=None, ttl=None,
             close_callback=None, return_callback=None, cancel_callback=None):
         """
         rpc call. It create a queue randomly when encounters first call with the same exchange name. Then, it starts
@@ -483,6 +483,7 @@ class TornadoAdapter(object):
         :param routing_key: routing key(e.g. dog.Yellow, cat.big)
         :param body: message
         :param timeout: timeout
+        :param ttl: message's ttl (millisecond)
         :param close_callback: channel close callback
         :param return_callback: channel close callback
         :param cancel_callback: channel cancel callback
@@ -500,10 +501,14 @@ class TornadoAdapter(object):
             yield self._rpc_exchange_dict[exchange].put(callback_queue)
             self.logger.info("starting rpc calling ")
             corr_id = str(uuid.uuid1())
+            if timeout is None:
+                raise RabbitMQRpcError("timeout should not be none")
+            if ttl is None:
+                raise RabbitMQRpcError("ttl should not be none")
+            properties = BasicProperties(correlation_id=corr_id, reply_to=callback_queue, expiration=str(ttl))
             yield self.publish(exchange, routing_key, body,
-                               properties=BasicProperties(correlation_id=corr_id,
-                                                          reply_to=callback_queue),
-                               mandatory=True, close_callback=close_callback, return_callback=return_callback)
+                               properties=properties, mandatory=True,
+                               close_callback=close_callback, return_callback=return_callback)
             result = yield self._wait_result(corr_id, timeout)
             if corr_id in self._rpc_corr_id_dict:
                 del self._rpc_corr_id_dict[corr_id]

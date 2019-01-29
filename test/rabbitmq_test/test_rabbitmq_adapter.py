@@ -10,7 +10,7 @@ from tornado.gen import coroutine, Return, sleep
 from tornado.queues import Queue
 from tornado.testing import AsyncTestCase, gen_test
 
-from common.rabbitmq import TornadoAdapter, RabbitMQError, SyncRabbitMQProducer
+from common.rabbitmq import TornadoAdapter, RabbitMQError, SyncRabbitMQProducer, RabbitMQMetrics
 from common.util import AsyncThreadPool
 
 EXECUTOR = AsyncThreadPool(pool_size=10)
@@ -36,6 +36,22 @@ class TestTornadoAdapterPublish(AsyncTestCase):
         for queue in queues:
             channel.queue_delete(queue)
         connection.close()
+
+    @gen_test(timeout=10)
+    def test_publish_ttl(self):
+        conn = pika.BlockingConnection(pika.URLParameters(self._url))
+        channel = conn.channel()
+        channel.exchange_declare(exchange=self.exchange, exchange_type="topic")
+        channel.queue_declare(queue=self.queue, durable=True, auto_delete=True)
+        channel.queue_bind(exchange=self.exchange, queue=self.queue,
+                           routing_key=self.routing_key)
+        properties = pika.BasicProperties(expiration="2000", delivery_mode=2)
+        yield self._adapter.publish(self.exchange, "adapter.test", "hello world",
+                                    properties=properties)
+        m = RabbitMQMetrics(self._url)
+        yield sleep(8)
+        result = yield m.metrics(self.queue, timeout=None, io_loop=self.io_loop)
+        self.assertEqual(result["messagesTotal"], 0)
 
     @coroutine
     def _process(self, body, back_value):
@@ -116,7 +132,7 @@ class TestTornadoAdapterRpc(AsyncTestCase):
     @gen_test(timeout=20)
     def test_rpc_call(self):
         yield self._adapter.receive(self._exchange, self._routing_key, self._queue, self.fib)
-        value = yield self._adapter.rpc(self._exchange, "fib.call", "10")
+        value = yield self._adapter.rpc(self._exchange, "fib.call", "10", timeout=60, ttl=60)
         self.assertEqual(str(self._fib(10)), value)
 
     @gen_test(timeout=20)
@@ -126,7 +142,8 @@ class TestTornadoAdapterRpc(AsyncTestCase):
         values = [random.randint(10, 20) for _ in range(size)]
         expect_values = [str(self._fib(value)) for value in values]
         actual_values = yield [
-            self._adapter.rpc(self._exchange, "fib.%d" % value, str(value)) for value in values
+            self._adapter.rpc(self._exchange, "fib.%d" % value, str(value),
+                              timeout=60, ttl=60) for value in values
         ]
         for expect, actual in zip(expect_values, actual_values):
             self.assertEqual(expect, actual)
@@ -137,7 +154,7 @@ class TestTornadoAdapterRpc(AsyncTestCase):
         self.assertTrue(success)
         yield self._adapter.receive(self._exchange, self._routing_key, self._queue, self.fib)
         with self.assertRaises(RabbitMQError):
-            yield self._adapter.rpc(self._exchange, "fib.50", "50", 3)
+            yield self._adapter.rpc(self._exchange, "fib.50", "50", 3, ttl=60)
 
     def tearDown(self):
         self._delete_queues(self._queue)
