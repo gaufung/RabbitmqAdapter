@@ -422,6 +422,7 @@ class TornadoAdapter(object):
         :type handler def fn(body)
         :param no_ack: ack
         :param prefetch_count: prefetch count
+        :param return_callback: channel return callback.
         :param close_callback: channel close callback
         :param cancel_callback: channel cancel callback
         :return: None
@@ -472,17 +473,19 @@ class TornadoAdapter(object):
             unused_channel.basic_ack(basic_deliver.delivery_tag)
 
     @gen.coroutine
-    def rpc(self, exchange, routing_key, body, timeout=None,
+    def rpc(self, exchange, routing_key, body, timeout, ttl,
             close_callback=None, return_callback=None, cancel_callback=None):
         """
         rpc call. It create a queue randomly when encounters first call with the same exchange name. Then, it starts
         consuming the created queue(waiting result). It publishes message to rabbitmq with properties that has correlation_id
-        and reply_to. if timeout is set, it starts a coroutine to wait timeout and raises an `Exception("timeout")`.
-        If server has been sent result, it return it asynchronously.
+        and reply_to. It will starts a coroutine to wait timeout and raises an `Exception("timeout")`.
+        ttl is used to message's time to live in rabbitmq queue. If server has been sent result, it return it asynchronously.
         :param exchange: exchange name
         :param routing_key: routing key(e.g. dog.Yellow, cat.big)
         :param body: message
-        :param timeout: timeout
+        :param timeout: rpc timeout (second)
+        :param ttl: message's ttl (millisecond)
+        :type ttl: numeric(int or float) or string
         :param close_callback: channel close callback
         :param return_callback: channel close callback
         :param cancel_callback: channel cancel callback
@@ -500,10 +503,10 @@ class TornadoAdapter(object):
             yield self._rpc_exchange_dict[exchange].put(callback_queue)
             self.logger.info("starting rpc calling ")
             corr_id = str(uuid.uuid1())
+            properties = BasicProperties(correlation_id=corr_id, reply_to=callback_queue, expiration=str(ttl))
             yield self.publish(exchange, routing_key, body,
-                               properties=BasicProperties(correlation_id=corr_id,
-                                                          reply_to=callback_queue),
-                               mandatory=True, close_callback=close_callback, return_callback=return_callback)
+                               properties=properties, mandatory=True,
+                               close_callback=close_callback, return_callback=return_callback)
             result = yield self._wait_result(corr_id, timeout)
             if corr_id in self._rpc_corr_id_dict:
                 del self._rpc_corr_id_dict[corr_id]
