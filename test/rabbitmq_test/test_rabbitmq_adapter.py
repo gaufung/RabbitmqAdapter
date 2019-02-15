@@ -132,7 +132,7 @@ class TestTornadoAdapterRpc(AsyncTestCase):
     @gen_test(timeout=20)
     def test_rpc_call(self):
         yield self._adapter.receive(self._exchange, self._routing_key, self._queue, self.fib)
-        value = yield self._adapter.rpc(self._exchange, "fib.call", "10", timeout=60, ttl=60)
+        value = yield self._adapter.rpc(self._exchange, "fib.call", "10", timeout=60, ttl=3)
         self.assertEqual(str(self._fib(10)), value)
 
     @gen_test(timeout=20)
@@ -154,7 +154,7 @@ class TestTornadoAdapterRpc(AsyncTestCase):
         self.assertTrue(success)
         yield self._adapter.receive(self._exchange, self._routing_key, self._queue, self.fib)
         with self.assertRaises(RabbitMQError):
-            yield self._adapter.rpc(self._exchange, "fib.50", "50", 3, ttl=60)
+            yield self._adapter.rpc(self._exchange, "fib.50", "50", 3, ttl=4)
 
     def tearDown(self):
         self._delete_queues(self._queue)

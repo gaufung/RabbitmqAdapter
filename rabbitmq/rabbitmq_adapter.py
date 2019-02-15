@@ -484,8 +484,8 @@ class TornadoAdapter(object):
         :param routing_key: routing key(e.g. dog.Yellow, cat.big)
         :param body: message
         :param timeout: rpc timeout (second)
-        :param ttl: message's ttl (millisecond)
-        :type ttl: numeric(int or float) or string
+        :param ttl: message's ttl (second)
+        :type ttl: int
         :param close_callback: channel close callback
         :param return_callback: channel close callback
         :param cancel_callback: channel cancel callback
@@ -503,7 +503,7 @@ class TornadoAdapter(object):
             yield self._rpc_exchange_dict[exchange].put(callback_queue)
             self.logger.info("starting rpc calling ")
             corr_id = str(uuid.uuid1())
-            properties = BasicProperties(correlation_id=corr_id, reply_to=callback_queue, expiration=str(ttl))
+            properties = BasicProperties(correlation_id=corr_id, reply_to=callback_queue, expiration=str(ttl*1000))
             yield self.publish(exchange, routing_key, body,
                                properties=properties, mandatory=True,
                                close_callback=close_callback, return_callback=return_callback)
