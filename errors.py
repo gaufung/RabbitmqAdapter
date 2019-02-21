@@ -68,10 +68,10 @@ class ASArgFormatError(ASBaseError):
 
 class ASAlreadyExistError(ASBaseError):
     """
-    AS already exist error
+    AS already exist error,
     """
     def __init__(self, msg):
-        super(ASAlreadyExistError, self).__init__(_ALREADY_EXIST, msg, 400)
+        super(ASAlreadyExistError, self).__init__(_ALREADY_EXIST, msg, 409)
 
 
 class ASNotExistError(ASBaseError):
@@ -79,7 +79,7 @@ class ASNotExistError(ASBaseError):
     AS not exist error
     """
     def __init__(self, msg):
-        super(ASNotExistError, self).__init__(_NOT_EXIST, msg, 400)
+        super(ASNotExistError, self).__init__(_NOT_EXIST, msg, 404)
 
 
 class ASNotReadyError(ASBaseError):
@@ -95,7 +95,7 @@ class ASNotLoginError(ASBaseError):
     AS not login error
     """
     def __init__(self, msg):
-        super(ASNotLoginError, self).__init__(_NOT_LOGIN, msg, 400)
+        super(ASNotLoginError, self).__init__(_NOT_LOGIN, msg, 401)
 
 
 class ASOwnerMismatchError(ASBaseError):
@@ -103,7 +103,7 @@ class ASOwnerMismatchError(ASBaseError):
     As owner mismatch error
     """
     def __init__(self, msg):
-        super(ASOwnerMismatchError, self).__init__(_OWNER_MISMATCH, msg, 400)
+        super(ASOwnerMismatchError, self).__init__(_OWNER_MISMATCH, msg, 401)
 
 
 class ASEmptySetError(ASBaseError):
@@ -119,7 +119,7 @@ class ASNotSupportError(ASBaseError):
     AS not support error
     """
     def __init__(self, msg):
-        super(ASNotSupportError, self).__init__(_NOT_SUPPORT, msg, 400)
+        super(ASNotSupportError, self).__init__(_NOT_SUPPORT, msg, 403)
 
 
 class ASServerBusyError(ASBaseError):
@@ -127,7 +127,7 @@ class ASServerBusyError(ASBaseError):
     As server busy error
     """
     def __init__(self, msg):
-        super(ASServerBusyError, self).__init__(_SERVER_BUSY, msg, 500)
+        super(ASServerBusyError, self).__init__(_SERVER_BUSY, msg, 503)
 
 
 class ASOperationForbiddenError(ASBaseError):
@@ -135,7 +135,7 @@ class ASOperationForbiddenError(ASBaseError):
     AS operation forbidden error
     """
     def __init__(self, msg):
-        super(ASOperationForbiddenError, self).__init__(_OPERATION_FORBIDDEN, msg, 400)
+        super(ASOperationForbiddenError, self).__init__(_OPERATION_FORBIDDEN, msg, 403)
 
 
 class ASPermissionDeniedError(ASBaseError):
@@ -143,7 +143,7 @@ class ASPermissionDeniedError(ASBaseError):
     AS permission denied error
     """
     def __init__(self, msg):
-        super(ASPermissionDeniedError, self).__init__(_PERMISSION_DENIED, msg, 400)
+        super(ASPermissionDeniedError, self).__init__(_PERMISSION_DENIED, msg, 401)
 
 
 class ASArgExpiredError(ASBaseError):
@@ -151,7 +151,7 @@ class ASArgExpiredError(ASBaseError):
     AS argument expired error
     """
     def __init__(self, msg):
-        super(ASArgExpiredError, self).__init__(_ARG_EXPIRED, msg, 400)
+        super(ASArgExpiredError, self).__init__(_ARG_EXPIRED, msg, 410)
 
 
 class ASResourceBusyError(ASBaseError):
@@ -159,7 +159,7 @@ class ASResourceBusyError(ASBaseError):
     AS resource busy error
     """
     def __init__(self, msg):
-        super(ASResourceBusyError, self).__init__(_RESOURCE_BUSY, msg, 500)
+        super(ASResourceBusyError, self).__init__(_RESOURCE_BUSY, msg, 503)
 
 
 class ASSysError(ASBaseError):
