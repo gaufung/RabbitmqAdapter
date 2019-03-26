@@ -122,13 +122,10 @@ class AsyncProcess(object):
         else:
             if self._timeout is not None:
                 raise Exception("%s subprocess timeout" % (self._process_name,))
-        if self._exit_code is None:
-            self.logger.error("%s exit code is None" % (self._process_name,))
-        if self._exit_code is not None and self._exit_code != 0:
-            if self._exit_code == 2:
-                self.logger.error("%s exit code is %d" % (self._process_name, self._exit_code))
-            else:
-                raise Exception("%s exit code is %d" % (self._process_name, self._exit_code))
+        ret = yield self._process.wait_for_exit(False)
+        self.logger.info("process exit code: %d", ret)
+        if ret != 0:
+            raise Exception("process exit code %d", ret)
 
 
 class AsyncProcessPool(object):
