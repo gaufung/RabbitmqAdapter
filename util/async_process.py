@@ -103,8 +103,6 @@ class AsyncProcess(object):
                                        stderr=Subprocess.STREAM, **kwargs)
         else:
             self._process = Subprocess(self._args, cwd=self._cwd, **kwargs)
-
-        #333333333333self._process.set_exit_callback(self._exit_callback)
         if self._timeout is not None:
             self.logger.info("invoke timeout")
             self._timeout_cancel = self._io_loop.call_later(self._timeout, self._timeout_callback)
