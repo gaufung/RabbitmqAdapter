@@ -501,15 +501,21 @@ class TornadoAdapter(object):
                 yield self._rpc_exchange_dict[exchange].put(callback_queue)
             callback_queue = yield self._rpc_exchange_dict[exchange].get()
             yield self._rpc_exchange_dict[exchange].put(callback_queue)
-            self.logger.info("starting rpc calling ")
             corr_id = str(uuid.uuid1())
+            self.logger.info("starting rpc calling correlation id: %s", corr_id)
+            if corr_id in self._rpc_corr_id_dict:
+                self.logger.warning("correlation id exists before calling. %s", corr_id)
+                del self._rpc_corr_id_dict[corr_id]
+            self._rpc_corr_id_dict[corr_id] = Future()
             properties = BasicProperties(correlation_id=corr_id, reply_to=callback_queue, expiration=str(ttl*1000))
             yield self.publish(exchange, routing_key, body,
                                properties=properties, mandatory=True,
                                close_callback=close_callback, return_callback=return_callback)
+            self.logger.info("rpc message has been sent. %s", corr_id)
             result = yield self._wait_result(corr_id, timeout)
             if corr_id in self._rpc_corr_id_dict:
                 del self._rpc_corr_id_dict[corr_id]
+            self.logger.info("rpc message gets response. %s", corr_id)
             raise gen.Return(result)
         except (gen.Return, RabbitMQError):
             raise
@@ -530,19 +536,23 @@ class TornadoAdapter(object):
         raise gen.Return(callback_queue)
 
     def _rpc_callback_process(self, unused_channel, basic_deliver, properties, body):
+        self.logger.info("rpc get response, correlation id: %s", properties.correlation_id)
         if properties.correlation_id in self._rpc_corr_id_dict:
+            self.logger.info("rpc get response, correlation id: %s", properties.correlation_id)
             self._rpc_corr_id_dict[properties.correlation_id].set_result(body)
+        else:
+            self.logger.warning("rpc get non exist response. correlation id: %s", properties.correlation_id)
         unused_channel.basic_ack(basic_deliver.delivery_tag)
 
     def _wait_result(self, corr_id, timeout=None):
-        future = Future()
-        self._rpc_corr_id_dict[corr_id] = future
+        self.logger.info("begin waiting result. %s", corr_id)
+        future = self._rpc_corr_id_dict[corr_id]
 
         def on_timeout():
             if corr_id in self._rpc_corr_id_dict:
-                self.logger.error("timeout")
+                self.logger.error("rpc timeout. corr id : %s", corr_id)
                 del self._rpc_corr_id_dict[corr_id]
-                future.set_exception(RabbitMQTimeoutError('rpc timeout'))
+                future.set_exception(RabbitMQTimeoutError('rpc timeout. corr id: %s' % corr_id))
 
         if timeout is not None:
             self._io_loop.add_timeout(datetime.timedelta(seconds=timeout), on_timeout)
