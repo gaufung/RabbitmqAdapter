@@ -1,24 +1,36 @@
-**公共模块**
+# RabbitMQ's Tornado Advance APIs
 
-# 1 PEP8
-[pep8 规范文档](./pep8)
 
-# 2 项目管理
+## 1 Background
 
-## 2.1 Make命令
+[`pika`](https://pika.readthedocs.io/en/stable/) is a RabbitMQ client in Python and it also supports `tornado`'s IOLoop connection. However, the APIs for asychronous method are very poor. So I extends the APIs for better asychronous support.
 
-- `make reset`
+## 2 APIs
 
-重置整个解释器环境，删除原先虚拟环境文件夹，新建新的虚拟文件夹并且安装依赖
+### 2.1 Publish
 
-- `make deps`
+```python
+@gen.coroutine
+def publish(self, exchange, routing_key, body, properties=None,  mandatory=True, return_callback=None, close_callback=None):
+    pass
+```
 
-安装虚拟环境依赖
+### 2.2 Consumer
 
-- `make cov`
+```python
+@gen.coroutine
+def receive(self, exchange, routing_key, queue_name, handler, no_ack=False, prefetch_count=0,return_callback=None, close_callback=None, cancel_callback=None):
+    pass
+```
 
-运行单元测试，并且覆盖率报告
+### 2.3 RPC
 
-- `make push`
+```python
+@gen.coroutine
+def rpc(self, exchange, routing_key, body, timeout, ttl, close_callback=None, return_callback=None, cancel_callback=None):
+    pass
+```
 
-推送代码至远端仓库
+## 3 Conclusion
+
+This library has widly used in production environment and is proved that it is bug free.
