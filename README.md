@@ -1,7 +1,7 @@
 # RabbitMQ's Tornado Advance APIs
 
 
-## 1 Background
+## 1 Background
 
 [`pika`](https://pika.readthedocs.io/en/stable/) is a RabbitMQ client in Python and it also supports `tornado`'s IOLoop connection. However, the APIs for asychronous method are very poor. So I extends the APIs for better asychronous support.
 
